@@ -20,13 +20,16 @@ struct FileBrowserViewModelTests {
 
     private func makeViewModel(
         fileSystemService: FileSystemServiceProtocol = MockFileSystemService(listingResult: .success([])),
-        transferService: TransferServiceProtocol = MockTransferService(),
+        transferQueue: TransferQueueViewModel = TransferQueueViewModel(
+            transferService: MockTransferService(),
+            historyStore: MockTransferHistoryStore()
+        ),
         serial: String = "SERIAL",
         initialPath: String = "/sdcard"
     ) -> FileBrowserViewModel {
         FileBrowserViewModel(
             fileSystemService: fileSystemService,
-            transferService: transferService,
+            transferQueue: transferQueue,
             serial: serial,
             initialPath: initialPath
         )
@@ -139,45 +142,26 @@ struct FileBrowserViewModelTests {
     }
 
     @Test
-    func downloadCallsPullWithChosenDestinationAndClearsProgressWhenDone() async throws {
-        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 50), TransferProgress(percent: 100)])
-        let viewModel = makeViewModel(transferService: transferService)
-        let destination = URL(fileURLWithPath: "/tmp/notes.txt")
+    func downloadEnqueuesIntoTheSharedTransferQueue() {
+        let transferQueue = TransferQueueViewModel(transferService: MockTransferService(), historyStore: MockTransferHistoryStore())
+        let viewModel = makeViewModel(transferQueue: transferQueue)
 
-        viewModel.download(makeFile("notes.txt"), to: destination)
-        try await Task.sleep(for: .milliseconds(50))
+        viewModel.download(makeFile("notes.txt"), to: URL(fileURLWithPath: "/tmp/notes.txt"))
 
-        let calls = await transferService.pullCalls
-        #expect(calls == [PullCall(remotePath: "/sdcard/notes.txt", localURL: destination, serial: "SERIAL")])
-        #expect(viewModel.activeTransfer == nil)
-        #expect(viewModel.transferError == nil)
+        #expect(transferQueue.items.count == 1)
+        #expect(transferQueue.items[0].direction == .download)
+        #expect(transferQueue.items[0].remotePath == "/sdcard/notes.txt")
     }
 
     @Test
-    func uploadCallsPushWithRemotePathInCurrentFolderAndReloads() async throws {
-        let fileSystemService = MockFileSystemService(listingResult: .success([]))
-        let transferService = MockTransferService(pushProgress: [TransferProgress(percent: 100)])
-        let viewModel = makeViewModel(fileSystemService: fileSystemService, transferService: transferService)
-        let localURL = URL(fileURLWithPath: "/tmp/photo.jpg")
-
-        viewModel.upload(from: localURL)
-        try await Task.sleep(for: .milliseconds(50))
-
-        let calls = await transferService.pushCalls
-        #expect(calls == [PushCall(localURL: localURL, remotePath: "/sdcard/photo.jpg", serial: "SERIAL")])
-        #expect(viewModel.activeTransfer == nil)
-    }
-
-    @Test
-    func uploadSurfacesTransferFailure() async throws {
-        struct SomeError: Error {}
-        let transferService = MockTransferService(pushProgress: [], pushFailure: SomeError())
-        let viewModel = makeViewModel(transferService: transferService)
+    func uploadEnqueuesWithRemotePathInCurrentFolder() {
+        let transferQueue = TransferQueueViewModel(transferService: MockTransferService(), historyStore: MockTransferHistoryStore())
+        let viewModel = makeViewModel(transferQueue: transferQueue)
 
         viewModel.upload(from: URL(fileURLWithPath: "/tmp/photo.jpg"))
-        try await Task.sleep(for: .milliseconds(50))
 
-        #expect(viewModel.transferError != nil)
-        #expect(viewModel.activeTransfer == nil)
+        #expect(transferQueue.items.count == 1)
+        #expect(transferQueue.items[0].direction == .upload)
+        #expect(transferQueue.items[0].remotePath == "/sdcard/photo.jpg")
     }
 }

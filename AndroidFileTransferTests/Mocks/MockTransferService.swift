@@ -18,6 +18,7 @@ actor MockTransferService: TransferServiceProtocol {
     private var pushFailure: Error?
     private var pullProgress: [TransferProgress]
     private var pullFailure: Error?
+    private var delay: Duration
 
     private(set) var pushCalls: [PushCall] = []
     private(set) var pullCalls: [PullCall] = []
@@ -26,19 +27,22 @@ actor MockTransferService: TransferServiceProtocol {
         pushProgress: [TransferProgress] = [TransferProgress(percent: 100)],
         pushFailure: Error? = nil,
         pullProgress: [TransferProgress] = [TransferProgress(percent: 100)],
-        pullFailure: Error? = nil
+        pullFailure: Error? = nil,
+        delay: Duration = .zero
     ) {
         self.pushProgress = pushProgress
         self.pushFailure = pushFailure
         self.pullProgress = pullProgress
         self.pullFailure = pullFailure
+        self.delay = delay
     }
 
     nonisolated func push(localURL: URL, remotePath: String, on serial: String) -> AsyncThrowingStream<TransferProgress, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 await self.recordPush(localURL: localURL, remotePath: remotePath, serial: serial)
-                let (progress, failure) = await (self.pushProgress, self.pushFailure)
+                let (progress, failure, delay) = await (self.pushProgress, self.pushFailure, self.delay)
+                if delay > .zero { try? await Task.sleep(for: delay) }
                 for update in progress {
                     continuation.yield(update)
                 }
@@ -55,7 +59,8 @@ actor MockTransferService: TransferServiceProtocol {
         AsyncThrowingStream { continuation in
             Task {
                 await self.recordPull(remotePath: remotePath, localURL: localURL, serial: serial)
-                let (progress, failure) = await (self.pullProgress, self.pullFailure)
+                let (progress, failure, delay) = await (self.pullProgress, self.pullFailure, self.delay)
+                if delay > .zero { try? await Task.sleep(for: delay) }
                 for update in progress {
                     continuation.yield(update)
                 }

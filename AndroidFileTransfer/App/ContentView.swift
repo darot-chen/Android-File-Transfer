@@ -4,6 +4,7 @@ struct ContentView: View {
     let environment: AppEnvironment
     @State private var deviceListViewModel: DeviceListViewModel
     @State private var selectedDeviceID: String?
+    @State private var isShowingTransferQueue = false
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -24,6 +25,19 @@ struct ContentView: View {
                     .frame(minWidth: 480, minHeight: 320)
             }
         }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isShowingTransferQueue = true
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                }
+                .help("Transfers")
+            }
+        }
+        .sheet(isPresented: $isShowingTransferQueue) {
+            TransferQueueView(viewModel: environment.transferQueue)
+        }
         .task {
             await environment.bootstrapADB()
         }
@@ -36,7 +50,7 @@ private struct FileBrowserContainerView: View {
     init(environment: AppEnvironment, serial: String) {
         _viewModel = State(initialValue: FileBrowserViewModel(
             fileSystemService: environment.fileSystemService,
-            transferService: environment.transferService,
+            transferQueue: environment.transferQueue,
             serial: serial
         ))
     }

@@ -7,18 +7,19 @@ final class AppEnvironment {
     let adbService: ADBServiceProtocol
     let deviceService: DeviceServiceProtocol
     let fileSystemService: FileSystemServiceProtocol
-    let transferService: TransferServiceProtocol
+    let transferQueue: TransferQueueViewModel
 
     init(
         adbService: ADBServiceProtocol = ADBService(runner: ADBProcessRunner()),
         deviceService: DeviceServiceProtocol = DeviceService(streaming: ADBTrackDevicesStreamer()),
         fileSystemService: FileSystemServiceProtocol = FileSystemService(runner: ADBProcessRunner()),
-        transferService: TransferServiceProtocol = TransferService()
+        transferService: TransferServiceProtocol = TransferService(),
+        historyStore: TransferHistoryStoring = TransferHistoryStore()
     ) {
         self.adbService = adbService
         self.deviceService = deviceService
         self.fileSystemService = fileSystemService
-        self.transferService = transferService
+        self.transferQueue = TransferQueueViewModel(transferService: transferService, historyStore: historyStore)
     }
 
     func bootstrapADB() async {
