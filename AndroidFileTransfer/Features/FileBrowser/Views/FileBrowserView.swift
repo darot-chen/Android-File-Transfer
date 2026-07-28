@@ -13,6 +13,10 @@ struct FileBrowserView: View {
             toolbar
             Divider()
             content
+            if let activeTransfer = viewModel.activeTransfer {
+                Divider()
+                transferBar(activeTransfer)
+            }
         }
         .searchable(
             text: Binding(get: { viewModel.searchText }, set: { viewModel.searchText = $0 }),
@@ -56,6 +60,25 @@ struct FileBrowserView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .alert(
+            "Transfer Failed",
+            isPresented: Binding(get: { viewModel.transferError != nil }, set: { _ in }),
+            actions: { Button("OK") {} },
+            message: { Text(viewModel.transferError ?? "") }
+        )
+    }
+
+    private func transferBar(_ progress: TransferProgress) -> some View {
+        HStack {
+            ProgressView(value: Double(progress.percent), total: 100)
+            Text("\(progress.percent)%")
+                .font(.caption)
+                .monospacedDigit()
+            Button("Cancel") {
+                viewModel.cancelActiveTransfer()
+            }
+        }
+        .padding(8)
     }
 
     private var toolbar: some View {
@@ -98,6 +121,17 @@ struct FileBrowserView: View {
                 Image(systemName: "folder.badge.plus")
             }
             .help("New Folder")
+            .disabled(viewModel.activeTransfer != nil)
+
+            Button {
+                if let url = FilePanelPresenter.chooseFileToUpload() {
+                    viewModel.upload(from: url)
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .help("Upload File…")
+            .disabled(viewModel.activeTransfer != nil)
         }
         .padding(8)
     }
@@ -124,6 +158,14 @@ struct FileBrowserView: View {
                         Task { await viewModel.navigate(to: entry) }
                     }
                     .contextMenu {
+                        if !entry.isDirectory {
+                            Button("Download…") {
+                                if let destination = FilePanelPresenter.chooseSaveLocation(suggestedName: entry.name) {
+                                    viewModel.download(entry, to: destination)
+                                }
+                            }
+                            .disabled(viewModel.activeTransfer != nil)
+                        }
                         Button("Rename…") {
                             renameText = entry.name
                             fileToRename = entry

@@ -7,15 +7,18 @@ final class AppEnvironment {
     let adbService: ADBServiceProtocol
     let deviceService: DeviceServiceProtocol
     let fileSystemService: FileSystemServiceProtocol
+    let transferService: TransferServiceProtocol
 
     init(
         adbService: ADBServiceProtocol = ADBService(runner: ADBProcessRunner()),
         deviceService: DeviceServiceProtocol = DeviceService(streaming: ADBTrackDevicesStreamer()),
-        fileSystemService: FileSystemServiceProtocol = FileSystemService(runner: ADBProcessRunner())
+        fileSystemService: FileSystemServiceProtocol = FileSystemService(runner: ADBProcessRunner()),
+        transferService: TransferServiceProtocol = TransferService()
     ) {
         self.adbService = adbService
         self.deviceService = deviceService
         self.fileSystemService = fileSystemService
+        self.transferService = transferService
     }
 
     func bootstrapADB() async {

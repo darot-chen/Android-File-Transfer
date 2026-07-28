@@ -34,7 +34,11 @@ private struct FileBrowserContainerView: View {
     @State private var viewModel: FileBrowserViewModel
 
     init(environment: AppEnvironment, serial: String) {
-        _viewModel = State(initialValue: FileBrowserViewModel(fileSystemService: environment.fileSystemService, serial: serial))
+        _viewModel = State(initialValue: FileBrowserViewModel(
+            fileSystemService: environment.fileSystemService,
+            transferService: environment.transferService,
+            serial: serial
+        ))
     }
 
     var body: some View {

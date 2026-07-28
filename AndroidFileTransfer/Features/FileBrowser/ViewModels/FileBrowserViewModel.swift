@@ -16,11 +16,22 @@ final class FileBrowserViewModel {
     private(set) var errorMessage: String?
     var searchText: String = ""
 
+    private(set) var activeTransfer: TransferProgress?
+    private(set) var transferError: String?
+    private var transferTask: Task<Void, Never>?
+
     private let fileSystemService: FileSystemServiceProtocol
+    private let transferService: TransferServiceProtocol
     private let serial: String
 
-    init(fileSystemService: FileSystemServiceProtocol, serial: String, initialPath: String = "/sdcard") {
+    init(
+        fileSystemService: FileSystemServiceProtocol,
+        transferService: TransferServiceProtocol,
+        serial: String,
+        initialPath: String = "/sdcard"
+    ) {
         self.fileSystemService = fileSystemService
+        self.transferService = transferService
         self.serial = serial
         self.currentPath = initialPath
     }
@@ -105,5 +116,47 @@ final class FileBrowserViewModel {
         } catch {
             errorMessage = String(describing: error)
         }
+    }
+
+    func download(_ file: RemoteFile, to destination: URL) {
+        guard transferTask == nil else { return }
+        transferError = nil
+        activeTransfer = TransferProgress(percent: 0)
+        transferTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await progress in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {
+                    self.activeTransfer = progress
+                }
+            } catch {
+                self.transferError = String(describing: error)
+            }
+            self.activeTransfer = nil
+            self.transferTask = nil
+        }
+    }
+
+    func upload(from localURL: URL) {
+        guard transferTask == nil else { return }
+        transferError = nil
+        activeTransfer = TransferProgress(percent: 0)
+        let remotePath = (currentPath as NSString).appendingPathComponent(localURL.lastPathComponent)
+        transferTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await progress in transferService.push(localURL: localURL, remotePath: remotePath, on: serial) {
+                    self.activeTransfer = progress
+                }
+                await self.load()
+            } catch {
+                self.transferError = String(describing: error)
+            }
+            self.activeTransfer = nil
+            self.transferTask = nil
+        }
+    }
+
+    func cancelActiveTransfer() {
+        transferTask?.cancel()
     }
 }
