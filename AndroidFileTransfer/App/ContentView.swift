@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var deviceListViewModel: DeviceListViewModel
     @State private var selectedDeviceID: String?
     @State private var pendingInitialPath: String?
+    @State private var selectedDestination: BrowseDestination? = .files
+    @State private var libraryViewModel: LibraryViewModel?
     @State private var isShowingTransferQueue = false
     @State private var isShowingSettings = false
     @State private var isShowingLogs = false
@@ -22,18 +24,41 @@ struct ContentView: View {
                 onSelectFavorite: { favorite in
                     selectedDeviceID = favorite.serial
                     pendingInitialPath = favorite.path
+                    selectedDestination = .files
                 },
                 selection: $selectedDeviceID
             )
             .navigationTitle("Devices")
+        } content: {
+            if let libraryViewModel {
+                LibraryCategoriesView(libraryViewModel: libraryViewModel, selection: $selectedDestination)
+            } else {
+                Text("Select a device")
+                    .foregroundStyle(.secondary)
+            }
         } detail: {
             if let selectedDeviceID {
-                FileBrowserContainerView(
-                    environment: environment,
-                    serial: selectedDeviceID,
-                    initialPath: pendingInitialPath ?? "/sdcard"
-                )
-                .id("\(selectedDeviceID)|\(pendingInitialPath ?? "")")
+                switch selectedDestination {
+                case .category(let category):
+                    if let libraryViewModel {
+                        CategoryBrowserView(
+                            category: category,
+                            libraryViewModel: libraryViewModel,
+                            transferQueue: environment.transferQueue,
+                            transferService: environment.transferService,
+                            logStore: environment.logStore,
+                            serial: selectedDeviceID
+                        )
+                        .id("\(selectedDeviceID)|\(category.rawValue)")
+                    }
+                case .files, .none:
+                    FileBrowserContainerView(
+                        environment: environment,
+                        serial: selectedDeviceID,
+                        initialPath: pendingInitialPath ?? "/sdcard"
+                    )
+                    .id("\(selectedDeviceID)|\(pendingInitialPath ?? "")")
+                }
             } else {
                 Text("Select a device")
                     .foregroundStyle(.secondary)
@@ -78,6 +103,14 @@ struct ContentView: View {
             SettingsView(viewModel: environment.settings)
         }
         .preferredColorScheme(environment.settings.appearance.colorScheme)
+        .onChange(of: selectedDeviceID) { _, newSerial in
+            selectedDestination = .files
+            if let newSerial {
+                libraryViewModel = LibraryViewModel(fileSystemService: environment.fileSystemService, serial: newSerial)
+            } else {
+                libraryViewModel = nil
+            }
+        }
         .task {
             await environment.bootstrapADB()
         }

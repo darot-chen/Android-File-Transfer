@@ -4,6 +4,7 @@ protocol FileSystemServiceProtocol: Sendable {
     func rename(from oldPath: String, to newPath: String, on serial: String) async throws
     func createFolder(path: String, on serial: String) async throws
     func search(query: String, in path: String, on serial: String) async throws -> [String]
+    func scanFiles(under root: String, on serial: String) async throws -> [String]
 }
 
 enum FileSystemServiceError: Error, Sendable, Equatable {
@@ -55,7 +56,26 @@ struct FileSystemService: FileSystemServiceProtocol {
     }
 
     func search(query: String, in path: String, on serial: String) async throws -> [String] {
-        let command = "find \(ShellQuoting.quote(path)) -iname \(ShellQuoting.quote("*\(query)*"))"
+        // -L: same symlink-following requirement as listDirectory — without
+        // it, searching from /sdcard (always a symlink) silently finds nothing.
+        let command = "find -L \(ShellQuoting.quote(path)) -iname \(ShellQuoting.quote("*\(query)*"))"
+        let result = try await runner.run(arguments: ["-s", serial, "shell", command])
+        guard result.exitCode == 0 else {
+            throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)
+        }
+        return result.standardOutput.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    func scanFiles(under root: String, on serial: String) async throws -> [String] {
+        // Prune Android/data and Android/obb: per-app sandboxed storage that
+        // isn't meaningful to browse as "your files" and can be an order of
+        // magnitude larger than everything else combined (measured ~130k
+        // files vs ~19k on a real device), which would make an unpruned scan
+        // both slow and full of noise.
+        let quotedRoot = ShellQuoting.quote(root)
+        let excludeData = ShellQuoting.quote("*/Android/data")
+        let excludeObb = ShellQuoting.quote("*/Android/obb")
+        let command = "find -L \(quotedRoot) \\( -path \(excludeData) -o -path \(excludeObb) \\) -prune -o -type f -print"
         let result = try await runner.run(arguments: ["-s", serial, "shell", command])
         guard result.exitCode == 0 else {
             throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)

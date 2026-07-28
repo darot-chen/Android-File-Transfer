@@ -140,7 +140,7 @@ struct FileSystemServiceTests {
 
         #expect(results == ["/sdcard/DCIM/a.jpg"])
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find '/sdcard' -iname '*vacation*'"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find -L '/sdcard' -iname '*vacation*'"]])
     }
 
     @Test
@@ -153,7 +153,7 @@ struct FileSystemServiceTests {
         _ = try await service.search(query: "a' ; rm -rf /", in: "/sdcard", on: "R58N70ABCDE")
 
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find '/sdcard' -iname '*a'\\'' ; rm -rf /*'"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find -L '/sdcard' -iname '*a'\\'' ; rm -rf /*'"]])
     }
 
     @Test
@@ -165,6 +165,36 @@ struct FileSystemServiceTests {
 
         await #expect(throws: FileSystemServiceError.self) {
             try await service.delete(path: "/sdcard/x", on: "R58N70ABCDE")
+        }
+    }
+
+    @Test
+    func scanFilesUsesExpectedArgumentsAndParsesPaths() async throws {
+        let output = "/sdcard/DCIM/a.jpg\n/sdcard/Download/b.pdf\n"
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 0, standardOutput: output, standardError: ""))
+        )
+        let service = FileSystemService(runner: runner)
+
+        let paths = try await service.scanFiles(under: "/sdcard", on: "R58N70ABCDE")
+
+        #expect(paths == ["/sdcard/DCIM/a.jpg", "/sdcard/Download/b.pdf"])
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [[
+            "-s", "R58N70ABCDE", "shell",
+            "find -L '/sdcard' \\( -path '*/Android/data' -o -path '*/Android/obb' \\) -prune -o -type f -print",
+        ]])
+    }
+
+    @Test
+    func scanFilesThrowsOnNonZeroExitCode() async {
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 1, standardOutput: "", standardError: "no such file or directory"))
+        )
+        let service = FileSystemService(runner: runner)
+
+        await #expect(throws: FileSystemServiceError.self) {
+            _ = try await service.scanFiles(under: "/missing", on: "R58N70ABCDE")
         }
     }
 }

@@ -45,6 +45,7 @@ final class AppEnvironment {
 
     func bootstrapADB() async {
         PreviewCache.clear()
+        ThumbnailCache.clear()
         do {
             let version = try await adbService.version()
             logStore.log(.info, category: "ADB", "Bundled adb version: \(version)")

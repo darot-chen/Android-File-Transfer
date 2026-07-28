@@ -20,9 +20,10 @@ final class FileBrowserViewModel {
     private(set) var searchResults: [String] = []
     private(set) var isSearching = false
     private var searchTask: Task<Void, Never>?
+    var viewMode: BrowserViewMode = .list
 
     private let fileSystemService: FileSystemServiceProtocol
-    private let transferService: TransferServiceProtocol
+    let transferService: TransferServiceProtocol
     private let transferQueue: TransferQueueViewModel
     private let favorites: FavoritesViewModel
     private let settings: SettingsViewModel

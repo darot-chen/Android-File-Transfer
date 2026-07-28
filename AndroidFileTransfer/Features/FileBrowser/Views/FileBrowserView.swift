@@ -135,6 +135,8 @@ struct FileBrowserView: View {
                     .help(viewModel.isPreviewing ? "Downloading preview…" : "Loading…")
             }
 
+            ViewModePicker(mode: Binding(get: { viewModel.viewMode }, set: { viewModel.viewMode = $0 }))
+
             Button {
                 viewModel.toggleFavoriteCurrentFolder()
             } label: {
@@ -187,61 +189,106 @@ struct FileBrowserView: View {
                 description: Text("This folder is empty.")
             )
         } else {
-            List(viewModel.filteredEntries) { entry in
-                row(for: entry)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        Task { await viewModel.navigate(to: entry) }
-                    }
-                    .contextMenu {
-                        if !entry.isDirectory {
-                            Button("Quick Look") {
-                                Task {
-                                    if let url = await viewModel.preview(entry) {
-                                        previewURL = url
-                                    }
-                                }
-                            }
-                            Button("Download…") {
-                                if let destination = FilePanelPresenter.chooseSaveLocation(
-                                    suggestedName: entry.name,
-                                    defaultDirectory: viewModel.defaultDownloadDirectory
-                                ) {
-                                    viewModel.download(entry, to: destination)
-                                }
-                            }
-                        }
-                        Button("Rename…") {
-                            renameText = entry.name
-                            fileToRename = entry
-                        }
-                        Button("Delete", role: .destructive) {
-                            fileToDelete = entry
-                        }
-                    }
+            switch viewModel.viewMode {
+            case .list:
+                listContent
+            case .grid:
+                gridContent
             }
         }
     }
 
+    private var listContent: some View {
+        List(viewModel.filteredEntries) { entry in
+            FileRow(entry: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    Task { await viewModel.navigate(to: entry) }
+                }
+                .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
+                .contextMenu { contextMenuItems(for: entry) }
+        }
+    }
+
+    private var gridContent: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
+                ForEach(viewModel.filteredEntries) { entry in
+                    VStack(spacing: 6) {
+                        RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                            .frame(width: 100, height: 100)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        Text(entry.name)
+                            .font(.caption)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        Task { await viewModel.navigate(to: entry) }
+                    }
+                    .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
+                    .contextMenu { contextMenuItems(for: entry) }
+                }
+            }
+            .padding()
+        }
+    }
+
     @ViewBuilder
-    private func row(for entry: RemoteFile) -> some View {
+    private func contextMenuItems(for entry: RemoteFile) -> some View {
+        if !entry.isDirectory {
+            Button("Quick Look") {
+                Task {
+                    if let url = await viewModel.preview(entry) {
+                        previewURL = url
+                    }
+                }
+            }
+            Button("Download…") {
+                if let destination = FilePanelPresenter.chooseSaveLocation(
+                    suggestedName: entry.name,
+                    defaultDirectory: viewModel.defaultDownloadDirectory
+                ) {
+                    viewModel.download(entry, to: destination)
+                }
+            }
+        }
+        Button("Rename…") {
+            renameText = entry.name
+            fileToRename = entry
+        }
+        Button("Delete", role: .destructive) {
+            fileToDelete = entry
+        }
+    }
+}
+
+/// Applies .draggable only to non-directory rows/cells — factored out since
+/// both list and grid layouts need the identical conditional.
+private struct DraggableIfFile: ViewModifier {
+    let entry: RemoteFile
+    let viewModel: FileBrowserViewModel
+
+    func body(content: Content) -> some View {
         if entry.isDirectory {
-            FileRow(entry: entry)
+            content
         } else {
-            FileRow(entry: entry)
-                .draggable(viewModel.transferable(for: entry))
+            content.draggable(viewModel.transferable(for: entry))
         }
     }
 }
 
 private struct FileRow: View {
     let entry: RemoteFile
+    let serial: String
+    let transferService: TransferServiceProtocol
 
     var body: some View {
         HStack {
-            Image(systemName: iconName)
-                .foregroundStyle(entry.isDirectory ? .blue : .secondary)
-                .frame(width: 20)
+            RemoteThumbnailView(file: entry, serial: serial, transferService: transferService)
+                .frame(width: 20, height: 20)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
@@ -254,17 +301,12 @@ private struct FileRow: View {
 
             Spacer()
 
-            if !entry.isDirectory {
+            if !entry.isDirectory, entry.modifiedAt != nil {
                 Text(entry.formattedSize)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var iconName: String {
-        if entry.isSymlink { return "link" }
-        return entry.isDirectory ? "folder.fill" : "doc"
     }
 }
 

@@ -19,6 +19,7 @@ struct CreateFolderCall: Sendable, Equatable {
 actor MockFileSystemService: FileSystemServiceProtocol {
     private var listingResult: Result<[RemoteFile], Error>
     private var searchResult: Result<[String], Error>
+    private var scanResult: Result<[String], Error>
     var deleteError: Error?
     var renameError: Error?
     var createFolderError: Error?
@@ -27,9 +28,14 @@ actor MockFileSystemService: FileSystemServiceProtocol {
     private(set) var renameCalls: [RenameCall] = []
     private(set) var createFolderCalls: [CreateFolderCall] = []
 
-    init(listingResult: Result<[RemoteFile], Error> = .success([]), searchResult: Result<[String], Error> = .success([])) {
+    init(
+        listingResult: Result<[RemoteFile], Error> = .success([]),
+        searchResult: Result<[String], Error> = .success([]),
+        scanResult: Result<[String], Error> = .success([])
+    ) {
         self.listingResult = listingResult
         self.searchResult = searchResult
+        self.scanResult = scanResult
     }
 
     func setListingResult(_ result: Result<[RemoteFile], Error>) {
@@ -38,6 +44,10 @@ actor MockFileSystemService: FileSystemServiceProtocol {
 
     func setDeleteError(_ error: Error?) {
         deleteError = error
+    }
+
+    func setScanResult(_ result: Result<[String], Error>) {
+        scanResult = result
     }
 
     func listDirectory(path: String, on serial: String) async throws -> [RemoteFile] {
@@ -61,5 +71,9 @@ actor MockFileSystemService: FileSystemServiceProtocol {
 
     func search(query: String, in path: String, on serial: String) async throws -> [String] {
         try searchResult.get()
+    }
+
+    func scanFiles(under root: String, on serial: String) async throws -> [String] {
+        try scanResult.get()
     }
 }
