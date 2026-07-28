@@ -129,9 +129,10 @@ struct FileBrowserView: View {
 
             Spacer()
 
-            if viewModel.isLoading {
+            if viewModel.isLoading || viewModel.isPreviewing {
                 ProgressView()
                     .controlSize(.small)
+                    .help(viewModel.isPreviewing ? "Downloading preview…" : "Loading…")
             }
 
             Button {

@@ -92,6 +92,18 @@ struct FileBrowserViewModelTests {
     }
 
     @Test
+    func breadcrumbsHandleDeeplyNestedPaths() {
+        let deepPath = "/sdcard/" + (0..<50).map { "folder\($0)" }.joined(separator: "/")
+        let viewModel = makeViewModel(initialPath: deepPath)
+
+        let breadcrumbs = viewModel.breadcrumbs
+
+        #expect(breadcrumbs.count == 52) // root + "sdcard" + 50 folders
+        #expect(breadcrumbs.first?.path == "/")
+        #expect(breadcrumbs.last?.path == deepPath)
+    }
+
+    @Test
     func deleteCallsServiceAndReloads() async {
         let service = MockFileSystemService(listingResult: .success([]))
         let viewModel = makeViewModel(fileSystemService: service)

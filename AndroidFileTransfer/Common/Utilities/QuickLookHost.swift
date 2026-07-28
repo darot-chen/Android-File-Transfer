@@ -19,20 +19,30 @@ final class QuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewP
 }
 
 final class QuickLookHostView: NSView {
-    let coordinator = QuickLookCoordinator()
+    // QLPreviewPanelDataSource/Delegate's category methods below aren't
+    // statically MainActor-isolated in the SDK (their protocol requirements
+    // aren't annotated), even though QLPreviewPanel.dataSource/delegate are,
+    // and AppKit only ever calls these on the main thread in practice.
+    // MainActor.assumeIsolated is exactly the sanctioned escape hatch for
+    // that mismatch, rather than a blanket nonisolated(unsafe).
+    nonisolated(unsafe) let coordinator = QuickLookCoordinator()
 
     override var acceptsFirstResponder: Bool { true }
 
-    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+    override nonisolated func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
 
-    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
-        panel.dataSource = coordinator
-        panel.delegate = coordinator
+    override nonisolated func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            panel.dataSource = coordinator
+            panel.delegate = coordinator
+        }
     }
 
-    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
-        panel.dataSource = nil
-        panel.delegate = nil
+    override nonisolated func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            panel.dataSource = nil
+            panel.delegate = nil
+        }
     }
 
     func preview(url: URL) {

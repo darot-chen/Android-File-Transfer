@@ -91,4 +91,36 @@ struct RemoteFileTests {
 
         #expect(files[0].path == "/file.txt")
     }
+
+    // No physical device with a large directory is available to test against
+    // in this environment; this exercises correctness and performance on a
+    // synthetic listing of the size the roadmap calls out ("thousands of files").
+    @Test
+    func parsesThousandsOfEntriesCorrectlyAndQuickly() {
+        let lineCount = 10_000
+        var lines = ["total \(lineCount)"]
+        for index in 0..<lineCount {
+            lines.append("-rw-rw---- 1 u0_a123 sdcard_rw \(index) 2024-01-15 10:20 file\(index).txt")
+        }
+        let output = lines.joined(separator: "\n")
+
+        let start = ContinuousClock.now
+        let files = RemoteFile.parseListing(output, parentPath: "/sdcard")
+        let elapsed = start.duration(to: .now)
+
+        #expect(files.count == lineCount)
+        #expect(files.first?.name == "file0.txt")
+        #expect(files.last?.name == "file9999.txt")
+        #expect(elapsed < .seconds(2))
+    }
+
+    @Test
+    func parsesDeeplyNestedPathWithoutIssue() {
+        let deepPath = "/sdcard/" + (0..<50).map { "folder\($0)" }.joined(separator: "/")
+        let line = "-rw-rw---- 1 u0_a123 sdcard_rw 12 2024-01-15 10:20 file.txt"
+
+        let files = RemoteFile.parseListing(line, parentPath: deepPath)
+
+        #expect(files[0].path == "\(deepPath)/file.txt")
+    }
 }
