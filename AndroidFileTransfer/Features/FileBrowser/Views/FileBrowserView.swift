@@ -101,6 +101,15 @@ struct FileBrowserView: View {
             }
             .disabled(viewModel.currentPath == "/")
             .help("Go to enclosing folder")
+            .keyboardShortcut(.upArrow, modifiers: .command)
+
+            Button {
+                Task { await viewModel.load() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Reload")
+            .keyboardShortcut("r", modifiers: .command)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
@@ -139,6 +148,7 @@ struct FileBrowserView: View {
                 Image(systemName: "magnifyingglass")
             }
             .help("Search Device…")
+            .keyboardShortcut("f", modifiers: [.command, .shift])
 
             Button {
                 newFolderName = ""
@@ -147,6 +157,7 @@ struct FileBrowserView: View {
                 Image(systemName: "folder.badge.plus")
             }
             .help("New Folder")
+            .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Button {
                 if let url = FilePanelPresenter.chooseFileToUpload() {
@@ -191,7 +202,10 @@ struct FileBrowserView: View {
                                 }
                             }
                             Button("Download…") {
-                                if let destination = FilePanelPresenter.chooseSaveLocation(suggestedName: entry.name) {
+                                if let destination = FilePanelPresenter.chooseSaveLocation(
+                                    suggestedName: entry.name,
+                                    defaultDirectory: viewModel.defaultDownloadDirectory
+                                ) {
                                     viewModel.download(entry, to: destination)
                                 }
                             }

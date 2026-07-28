@@ -53,6 +53,31 @@ struct TransferQueueViewModelTests {
     }
 
     @Test
+    func updateMaxConcurrentStartsMoreQueuedItemsImmediately() async throws {
+        let transferService = MockTransferService(pushProgress: [TransferProgress(percent: 100)], delay: .milliseconds(200))
+        let viewModel = TransferQueueViewModel(transferService: transferService, historyStore: MockTransferHistoryStore(), maxConcurrent: 1)
+
+        for index in 0..<3 {
+            viewModel.enqueueUpload(localURL: URL(fileURLWithPath: "/tmp/\(index).txt"), remotePath: "/sdcard/\(index).txt", serial: "SERIAL")
+        }
+        try await Task.sleep(for: .milliseconds(50))
+
+        func runningCount() -> Int {
+            viewModel.items.filter {
+                if case .inProgress = $0.status { return true }
+                return false
+            }.count
+        }
+
+        #expect(runningCount() == 1)
+
+        viewModel.updateMaxConcurrent(3)
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(runningCount() == 3)
+    }
+
+    @Test
     func failedItemCanBeRetried() async throws {
         struct SomeError: Error {}
         let transferService = MockTransferService(pushProgress: [], pushFailure: SomeError())

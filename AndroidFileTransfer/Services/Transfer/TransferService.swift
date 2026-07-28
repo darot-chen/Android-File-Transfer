@@ -16,7 +16,7 @@ protocol TransferServiceProtocol: Sendable {
 final class TransferService: TransferServiceProtocol, Sendable {
     private let binaryURL: URL?
 
-    init(binaryURL: URL? = Bundle.main.url(forResource: "adb", withExtension: nil)) {
+    init(binaryURL: URL? = ADBBinaryLocator.resolve()) {
         self.binaryURL = binaryURL
     }
 

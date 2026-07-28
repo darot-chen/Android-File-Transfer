@@ -8,7 +8,7 @@ final class TransferQueueViewModel {
 
     private let transferService: TransferServiceProtocol
     private let historyStore: TransferHistoryStoring
-    private let maxConcurrent: Int
+    private var maxConcurrent: Int
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
 
     init(transferService: TransferServiceProtocol, historyStore: TransferHistoryStoring, maxConcurrent: Int = 2) {
@@ -49,6 +49,11 @@ final class TransferQueueViewModel {
 
     func cancel(_ item: TransferItem) {
         runningTasks[item.id]?.cancel()
+    }
+
+    func updateMaxConcurrent(_ newValue: Int) {
+        maxConcurrent = newValue
+        processQueue()
     }
 
     func clearCompleted() {

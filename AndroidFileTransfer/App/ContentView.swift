@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var selectedDeviceID: String?
     @State private var pendingInitialPath: String?
     @State private var isShowingTransferQueue = false
+    @State private var isShowingSettings = false
+    @State private var isShowingLogs = false
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -46,11 +48,36 @@ struct ContentView: View {
                     Image(systemName: "arrow.up.arrow.down.circle")
                 }
                 .help("Transfers")
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            }
+            ToolbarItem {
+                Button {
+                    isShowingLogs = true
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                }
+                .help("Logs")
+            }
+            ToolbarItem {
+                Button {
+                    isShowingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .help("Settings")
+                .keyboardShortcut(",", modifiers: .command)
             }
         }
         .sheet(isPresented: $isShowingTransferQueue) {
             TransferQueueView(viewModel: environment.transferQueue)
         }
+        .sheet(isPresented: $isShowingLogs) {
+            LogsView(logStore: environment.logStore)
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(viewModel: environment.settings)
+        }
+        .preferredColorScheme(environment.settings.appearance.colorScheme)
         .task {
             await environment.bootstrapADB()
         }
@@ -66,6 +93,8 @@ private struct FileBrowserContainerView: View {
             transferService: environment.transferService,
             transferQueue: environment.transferQueue,
             favorites: environment.favorites,
+            settings: environment.settings,
+            logStore: environment.logStore,
             serial: serial,
             initialPath: initialPath
         ))

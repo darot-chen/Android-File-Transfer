@@ -25,6 +25,8 @@ final class FileBrowserViewModel {
     private let transferService: TransferServiceProtocol
     private let transferQueue: TransferQueueViewModel
     private let favorites: FavoritesViewModel
+    private let settings: SettingsViewModel
+    private let logStore: LogStore
     let serial: String
 
     init(
@@ -32,6 +34,8 @@ final class FileBrowserViewModel {
         transferService: TransferServiceProtocol,
         transferQueue: TransferQueueViewModel,
         favorites: FavoritesViewModel,
+        settings: SettingsViewModel,
+        logStore: LogStore,
         serial: String,
         initialPath: String = "/sdcard"
     ) {
@@ -39,8 +43,14 @@ final class FileBrowserViewModel {
         self.transferService = transferService
         self.transferQueue = transferQueue
         self.favorites = favorites
+        self.settings = settings
+        self.logStore = logStore
         self.serial = serial
         self.currentPath = initialPath
+    }
+
+    var defaultDownloadDirectory: String {
+        settings.defaultDownloadDirectory
     }
 
     var filteredEntries: [RemoteFile] {
@@ -70,7 +80,7 @@ final class FileBrowserViewModel {
             }
         } catch {
             errorMessage = String(describing: error)
-            AppLog.adb.error("Failed to list \(self.currentPath, privacy: .public): \(String(describing: error), privacy: .public)")
+            logStore.log(.error, category: "FileBrowser", "Failed to list \(currentPath): \(error)")
         }
         isLoading = false
     }
@@ -100,6 +110,7 @@ final class FileBrowserViewModel {
             await load()
         } catch {
             errorMessage = String(describing: error)
+            logStore.log(.error, category: "FileBrowser", "Failed to delete \(file.path): \(error)")
         }
     }
 
@@ -111,6 +122,7 @@ final class FileBrowserViewModel {
             await load()
         } catch {
             errorMessage = String(describing: error)
+            logStore.log(.error, category: "FileBrowser", "Failed to rename \(file.path): \(error)")
         }
     }
 
@@ -122,6 +134,7 @@ final class FileBrowserViewModel {
             await load()
         } catch {
             errorMessage = String(describing: error)
+            logStore.log(.error, category: "FileBrowser", "Failed to create folder \(newPath): \(error)")
         }
     }
 

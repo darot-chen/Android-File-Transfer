@@ -11,7 +11,7 @@ private final class ProcessBox: @unchecked Sendable {
 actor ADBProcessRunner: ADBProcessRunning {
     private let binaryURL: URL?
 
-    init(binaryURL: URL? = Bundle.main.url(forResource: "adb", withExtension: nil)) {
+    init(binaryURL: URL? = ADBBinaryLocator.resolve()) {
         self.binaryURL = binaryURL
     }
 

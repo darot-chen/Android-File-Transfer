@@ -26,7 +26,8 @@ struct FileBrowserViewModelTests {
         serial: String = "SERIAL",
         initialPath: String = "/sdcard"
     ) -> FileBrowserViewModel {
-        FileBrowserViewModel(
+        let ephemeralDefaults = UserDefaults(suiteName: "FileBrowserViewModelTests-\(UUID().uuidString)")!
+        return FileBrowserViewModel(
             fileSystemService: fileSystemService,
             transferService: transferService,
             transferQueue: transferQueue ?? TransferQueueViewModel(
@@ -34,6 +35,8 @@ struct FileBrowserViewModelTests {
                 historyStore: MockTransferHistoryStore()
             ),
             favorites: favorites ?? FavoritesViewModel(store: MockFavoritesStore()),
+            settings: SettingsViewModel(defaults: ephemeralDefaults),
+            logStore: LogStore(),
             serial: serial,
             initialPath: initialPath
         )
