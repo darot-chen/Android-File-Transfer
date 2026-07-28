@@ -43,15 +43,14 @@ actor ADBProcessRunner: ADBProcessRunning {
         )
     }
 
+    // Reads via a dedicated GCD thread rather than FileHandle.bytes: the latter
+    // ties up Swift's small cooperative thread pool for the duration of a blocking
+    // read, which can starve unrelated async work elsewhere in the app.
     private static func readAll(_ handle: FileHandle) async -> Data {
-        var data = Data()
-        do {
-            for try await byte in handle.bytes {
-                data.append(byte)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: handle.readDataToEndOfFile())
             }
-        } catch {
-            // Pipe closed at EOF surfaces as a thrown error here; treat as end of stream.
         }
-        return data
     }
 }

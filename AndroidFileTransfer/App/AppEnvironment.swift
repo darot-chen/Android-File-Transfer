@@ -5,9 +5,14 @@ import Observation
 @Observable
 final class AppEnvironment {
     let adbService: ADBServiceProtocol
+    let deviceService: DeviceServiceProtocol
 
-    init(adbService: ADBServiceProtocol = ADBService(runner: ADBProcessRunner())) {
+    init(
+        adbService: ADBServiceProtocol = ADBService(runner: ADBProcessRunner()),
+        deviceService: DeviceServiceProtocol = DeviceService(streaming: ADBTrackDevicesStreamer())
+    ) {
         self.adbService = adbService
+        self.deviceService = deviceService
     }
 
     func bootstrapADB() async {
