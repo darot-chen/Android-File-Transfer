@@ -17,16 +17,19 @@ final class FileBrowserViewModel {
     var searchText: String = ""
 
     private let fileSystemService: FileSystemServiceProtocol
+    private let transferService: TransferServiceProtocol
     private let transferQueue: TransferQueueViewModel
-    private let serial: String
+    let serial: String
 
     init(
         fileSystemService: FileSystemServiceProtocol,
+        transferService: TransferServiceProtocol,
         transferQueue: TransferQueueViewModel,
         serial: String,
         initialPath: String = "/sdcard"
     ) {
         self.fileSystemService = fileSystemService
+        self.transferService = transferService
         self.transferQueue = transferQueue
         self.serial = serial
         self.currentPath = initialPath
@@ -121,5 +124,13 @@ final class FileBrowserViewModel {
     func upload(from localURL: URL) {
         let remotePath = (currentPath as NSString).appendingPathComponent(localURL.lastPathComponent)
         transferQueue.enqueueUpload(localURL: localURL, remotePath: remotePath, serial: serial)
+    }
+
+    /// Used for drag-out: SwiftUI resolves this lazily only once a drop
+    /// actually completes, so the download only happens if the user follows
+    /// through — unlike `download(_:to:)`, this bypasses the queue since it's
+    /// driven synchronously by the OS drag session, not a user-tracked job.
+    func transferable(for file: RemoteFile) -> RemoteFileTransferable {
+        RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService)
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FileBrowserView: View {
     @State var viewModel: FileBrowserViewModel
@@ -7,12 +8,32 @@ struct FileBrowserView: View {
     @State private var renameText = ""
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             content
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in
+                        viewModel.upload(from: url)
+                    }
+                }
+            }
+            return true
         }
         .searchable(
             text: Binding(get: { viewModel.searchText }, set: { viewModel.searchText = $0 }),
@@ -127,7 +148,7 @@ struct FileBrowserView: View {
             )
         } else {
             List(viewModel.filteredEntries) { entry in
-                FileRow(entry: entry)
+                row(for: entry)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
                         Task { await viewModel.navigate(to: entry) }
@@ -149,6 +170,16 @@ struct FileBrowserView: View {
                         }
                     }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func row(for entry: RemoteFile) -> some View {
+        if entry.isDirectory {
+            FileRow(entry: entry)
+        } else {
+            FileRow(entry: entry)
+                .draggable(viewModel.transferable(for: entry))
         }
     }
 }

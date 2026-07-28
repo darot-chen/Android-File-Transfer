@@ -20,16 +20,18 @@ struct FileBrowserViewModelTests {
 
     private func makeViewModel(
         fileSystemService: FileSystemServiceProtocol = MockFileSystemService(listingResult: .success([])),
-        transferQueue: TransferQueueViewModel = TransferQueueViewModel(
-            transferService: MockTransferService(),
-            historyStore: MockTransferHistoryStore()
-        ),
+        transferService: TransferServiceProtocol = MockTransferService(),
+        transferQueue: TransferQueueViewModel? = nil,
         serial: String = "SERIAL",
         initialPath: String = "/sdcard"
     ) -> FileBrowserViewModel {
         FileBrowserViewModel(
             fileSystemService: fileSystemService,
-            transferQueue: transferQueue,
+            transferService: transferService,
+            transferQueue: transferQueue ?? TransferQueueViewModel(
+                transferService: transferService,
+                historyStore: MockTransferHistoryStore()
+            ),
             serial: serial,
             initialPath: initialPath
         )
@@ -163,5 +165,16 @@ struct FileBrowserViewModelTests {
         #expect(transferQueue.items.count == 1)
         #expect(transferQueue.items[0].direction == .upload)
         #expect(transferQueue.items[0].remotePath == "/sdcard/photo.jpg")
+    }
+
+    @Test
+    func transferableForDragOutCarriesTheRightFileAndSerial() {
+        let viewModel = makeViewModel(serial: "R58N70ABCDE")
+        let file = makeFile("photo.jpg")
+
+        let transferable = viewModel.transferable(for: file)
+
+        #expect(transferable.remoteFile == file)
+        #expect(transferable.serial == "R58N70ABCDE")
     }
 }

@@ -50,6 +50,7 @@ private struct FileBrowserContainerView: View {
     init(environment: AppEnvironment, serial: String) {
         _viewModel = State(initialValue: FileBrowserViewModel(
             fileSystemService: environment.fileSystemService,
+            transferService: environment.transferService,
             transferQueue: environment.transferQueue,
             serial: serial
         ))
