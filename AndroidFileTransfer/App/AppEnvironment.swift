@@ -6,13 +6,16 @@ import Observation
 final class AppEnvironment {
     let adbService: ADBServiceProtocol
     let deviceService: DeviceServiceProtocol
+    let fileSystemService: FileSystemServiceProtocol
 
     init(
         adbService: ADBServiceProtocol = ADBService(runner: ADBProcessRunner()),
-        deviceService: DeviceServiceProtocol = DeviceService(streaming: ADBTrackDevicesStreamer())
+        deviceService: DeviceServiceProtocol = DeviceService(streaming: ADBTrackDevicesStreamer()),
+        fileSystemService: FileSystemServiceProtocol = FileSystemService(runner: ADBProcessRunner())
     ) {
         self.adbService = adbService
         self.deviceService = deviceService
+        self.fileSystemService = fileSystemService
     }
 
     func bootstrapADB() async {

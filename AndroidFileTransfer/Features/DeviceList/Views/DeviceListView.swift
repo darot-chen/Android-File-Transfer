@@ -2,10 +2,12 @@ import SwiftUI
 
 struct DeviceListView: View {
     let viewModel: DeviceListViewModel
+    @Binding var selection: String?
 
     var body: some View {
-        List(viewModel.devices) { device in
+        List(viewModel.devices, selection: $selection) { device in
             DeviceRow(device: device)
+                .tag(device.id)
         }
         .overlay {
             if viewModel.devices.isEmpty {
