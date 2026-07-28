@@ -18,14 +18,29 @@ struct FileSystemService: FileSystemServiceProtocol {
     }
 
     func listDirectory(path: String, on serial: String) async throws -> [RemoteFile] {
-        let result = try await runner.run(arguments: [
+        // -L: without it, a symlink given as the listing target (e.g. /sdcard,
+        // which is always a symlink on Android) shows as a single symlink
+        // entry instead of its contents on at least some toybox builds.
+        let isoResult = try await runner.run(arguments: [
             "-s", serial,
-            "shell", "ls", "-la", "--time-style=long-iso", "--", path,
+            "shell", "ls", "-la", "-L", "--time-style=long-iso", "--", path,
         ])
-        guard result.exitCode == 0 else {
-            throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)
+        if isoResult.exitCode == 0 {
+            return RemoteFile.parseListing(isoResult.standardOutput, parentPath: path)
         }
-        return RemoteFile.parseListing(result.standardOutput, parentPath: path)
+
+        // Some toybox builds (seen on Android 16 / SDK 36) don't recognize
+        // --time-style at all, but their -l output already defaults to the
+        // same "yyyy-MM-dd HH:mm" format, so retry without the flag before
+        // surfacing an error.
+        let fallbackResult = try await runner.run(arguments: [
+            "-s", serial,
+            "shell", "ls", "-la", "-L", "--", path,
+        ])
+        guard fallbackResult.exitCode == 0 else {
+            throw FileSystemServiceError.commandFailed(exitCode: fallbackResult.exitCode, standardError: fallbackResult.standardError)
+        }
+        return RemoteFile.parseListing(fallbackResult.standardOutput, parentPath: path)
     }
 
     func delete(path: String, on serial: String) async throws {
