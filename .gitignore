@@ -17,3 +17,6 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# Bundled adb binary is fetched via Scripts/update-adb.sh, not committed.
+AndroidFileTransfer/Resources/adb
