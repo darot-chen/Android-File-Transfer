@@ -30,4 +30,49 @@ struct FileSystemServiceTests {
             _ = try await service.listDirectory(path: "/missing", on: "R58N70ABCDE")
         }
     }
+
+    @Test
+    func deleteUsesExpectedArguments() async throws {
+        let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
+        let service = FileSystemService(runner: runner)
+
+        try await service.delete(path: "/sdcard/old.txt", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "rm", "-rf", "--", "/sdcard/old.txt"]])
+    }
+
+    @Test
+    func renameUsesExpectedArguments() async throws {
+        let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
+        let service = FileSystemService(runner: runner)
+
+        try await service.rename(from: "/sdcard/a.txt", to: "/sdcard/b.txt", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mv", "--", "/sdcard/a.txt", "/sdcard/b.txt"]])
+    }
+
+    @Test
+    func createFolderUsesExpectedArguments() async throws {
+        let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
+        let service = FileSystemService(runner: runner)
+
+        try await service.createFolder(path: "/sdcard/NewFolder", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mkdir", "--", "/sdcard/NewFolder"]])
+    }
+
+    @Test
+    func mutatingOperationsThrowOnNonZeroExitCode() async {
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 1, standardOutput: "", standardError: "permission denied"))
+        )
+        let service = FileSystemService(runner: runner)
+
+        await #expect(throws: FileSystemServiceError.self) {
+            try await service.delete(path: "/sdcard/x", on: "R58N70ABCDE")
+        }
+    }
 }

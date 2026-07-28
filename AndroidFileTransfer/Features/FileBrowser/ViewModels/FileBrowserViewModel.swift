@@ -75,4 +75,35 @@ final class FileBrowserViewModel {
         currentPath = parent.isEmpty ? "/" : parent
         await load()
     }
+
+    func delete(_ file: RemoteFile) async {
+        do {
+            try await fileSystemService.delete(path: file.path, on: serial)
+            await load()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func rename(_ file: RemoteFile, to newName: String) async {
+        guard !newName.isEmpty, newName != file.name else { return }
+        let newPath = (currentPath as NSString).appendingPathComponent(newName)
+        do {
+            try await fileSystemService.rename(from: file.path, to: newPath, on: serial)
+            await load()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func createFolder(named name: String) async {
+        guard !name.isEmpty else { return }
+        let newPath = (currentPath as NSString).appendingPathComponent(name)
+        do {
+            try await fileSystemService.createFolder(path: newPath, on: serial)
+            await load()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
 }

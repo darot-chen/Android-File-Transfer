@@ -2,6 +2,11 @@ import SwiftUI
 
 struct FileBrowserView: View {
     @State var viewModel: FileBrowserViewModel
+    @State private var fileToDelete: RemoteFile?
+    @State private var fileToRename: RemoteFile?
+    @State private var renameText = ""
+    @State private var isCreatingFolder = false
+    @State private var newFolderName = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,6 +22,39 @@ struct FileBrowserView: View {
             if viewModel.entries.isEmpty {
                 await viewModel.load()
             }
+        }
+        .confirmationDialog(
+            "Delete “\(fileToDelete?.name ?? "")”?",
+            isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let file = fileToDelete {
+                    Task { await viewModel.delete(file) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
+        }
+        .alert(
+            "Rename",
+            isPresented: Binding(get: { fileToRename != nil }, set: { if !$0 { fileToRename = nil } })
+        ) {
+            TextField("Name", text: $renameText)
+            Button("Rename") {
+                if let file = fileToRename {
+                    Task { await viewModel.rename(file, to: renameText) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("New Folder", isPresented: $isCreatingFolder) {
+            TextField("Name", text: $newFolderName)
+            Button("Create") {
+                Task { await viewModel.createFolder(named: newFolderName) }
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -52,6 +90,14 @@ struct FileBrowserView: View {
                 ProgressView()
                     .controlSize(.small)
             }
+
+            Button {
+                newFolderName = ""
+                isCreatingFolder = true
+            } label: {
+                Image(systemName: "folder.badge.plus")
+            }
+            .help("New Folder")
         }
         .padding(8)
     }
@@ -76,6 +122,15 @@ struct FileBrowserView: View {
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
                         Task { await viewModel.navigate(to: entry) }
+                    }
+                    .contextMenu {
+                        Button("Rename…") {
+                            renameText = entry.name
+                            fileToRename = entry
+                        }
+                        Button("Delete", role: .destructive) {
+                            fileToDelete = entry
+                        }
                     }
             }
         }
