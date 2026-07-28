@@ -16,7 +16,7 @@ struct FileSystemServiceTests {
         #expect(files == RemoteFile.parseListing(output, parentPath: "/sdcard"))
 
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "ls", "-la", "-L", "--time-style=long-iso", "--", "/sdcard"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "ls -la -L --time-style=long-iso -- '/sdcard'"]])
     }
 
     @Test
@@ -36,8 +36,8 @@ struct FileSystemServiceTests {
 
         let recorded = await runner.recordedArguments
         #expect(recorded == [
-            ["-s", "R58N70ABCDE", "shell", "ls", "-la", "-L", "--time-style=long-iso", "--", "/sdcard"],
-            ["-s", "R58N70ABCDE", "shell", "ls", "-la", "-L", "--", "/sdcard"],
+            ["-s", "R58N70ABCDE", "shell", "ls -la -L --time-style=long-iso -- '/sdcard'"],
+            ["-s", "R58N70ABCDE", "shell", "ls -la -L -- '/sdcard'"],
         ])
     }
 
@@ -57,6 +57,19 @@ struct FileSystemServiceTests {
     }
 
     @Test
+    func listDirectoryQuotesPathWithShellMetacharacters() async throws {
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: ""))
+        )
+        let service = FileSystemService(runner: runner)
+
+        _ = try await service.listDirectory(path: "/sdcard/a; rm -rf /", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded[0][3] == "ls -la -L --time-style=long-iso -- '/sdcard/a; rm -rf /'")
+    }
+
+    @Test
     func deleteUsesExpectedArguments() async throws {
         let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
         let service = FileSystemService(runner: runner)
@@ -64,7 +77,18 @@ struct FileSystemServiceTests {
         try await service.delete(path: "/sdcard/old.txt", on: "R58N70ABCDE")
 
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "rm", "-rf", "--", "/sdcard/old.txt"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "rm -rf -- '/sdcard/old.txt'"]])
+    }
+
+    @Test
+    func deleteQuotesPathWithShellMetacharacters() async throws {
+        let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
+        let service = FileSystemService(runner: runner)
+
+        try await service.delete(path: "/sdcard/b; echo INJECTED", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "rm -rf -- '/sdcard/b; echo INJECTED'"]])
     }
 
     @Test
@@ -75,7 +99,23 @@ struct FileSystemServiceTests {
         try await service.rename(from: "/sdcard/a.txt", to: "/sdcard/b.txt", on: "R58N70ABCDE")
 
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mv", "--", "/sdcard/a.txt", "/sdcard/b.txt"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mv -- '/sdcard/a.txt' '/sdcard/b.txt'"]])
+    }
+
+    @Test
+    func renameQuotesDestinationWithShellMetacharacters() async throws {
+        // This is the exact real-world injection this app shipped with:
+        // renaming to a name containing ";" used to execute the rest of the
+        // string as a second command on the device.
+        let runner = MockADBProcessRunner(result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: "")))
+        let service = FileSystemService(runner: runner)
+
+        try await service.rename(from: "/sdcard/a", to: "/sdcard/b; echo INJECTED > /sdcard/PROOF.txt", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [
+            ["-s", "R58N70ABCDE", "shell", "mv -- '/sdcard/a' '/sdcard/b; echo INJECTED > /sdcard/PROOF.txt'"],
+        ])
     }
 
     @Test
@@ -86,7 +126,34 @@ struct FileSystemServiceTests {
         try await service.createFolder(path: "/sdcard/NewFolder", on: "R58N70ABCDE")
 
         let recorded = await runner.recordedArguments
-        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mkdir", "--", "/sdcard/NewFolder"]])
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "mkdir -- '/sdcard/NewFolder'"]])
+    }
+
+    @Test
+    func searchUsesExpectedArguments() async throws {
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 0, standardOutput: "/sdcard/DCIM/a.jpg\n", standardError: ""))
+        )
+        let service = FileSystemService(runner: runner)
+
+        let results = try await service.search(query: "vacation", in: "/sdcard", on: "R58N70ABCDE")
+
+        #expect(results == ["/sdcard/DCIM/a.jpg"])
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find '/sdcard' -iname '*vacation*'"]])
+    }
+
+    @Test
+    func searchQuotesQueryWithShellMetacharacters() async throws {
+        let runner = MockADBProcessRunner(
+            result: .success(ADBProcessResult(exitCode: 0, standardOutput: "", standardError: ""))
+        )
+        let service = FileSystemService(runner: runner)
+
+        _ = try await service.search(query: "a' ; rm -rf /", in: "/sdcard", on: "R58N70ABCDE")
+
+        let recorded = await runner.recordedArguments
+        #expect(recorded == [["-s", "R58N70ABCDE", "shell", "find '/sdcard' -iname '*a'\\'' ; rm -rf /*'"]])
     }
 
     @Test

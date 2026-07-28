@@ -21,9 +21,9 @@ struct FileSystemService: FileSystemServiceProtocol {
         // -L: without it, a symlink given as the listing target (e.g. /sdcard,
         // which is always a symlink on Android) shows as a single symlink
         // entry instead of its contents on at least some toybox builds.
+        let quotedPath = ShellQuoting.quote(path)
         let isoResult = try await runner.run(arguments: [
-            "-s", serial,
-            "shell", "ls", "-la", "-L", "--time-style=long-iso", "--", path,
+            "-s", serial, "shell", "ls -la -L --time-style=long-iso -- \(quotedPath)",
         ])
         if isoResult.exitCode == 0 {
             return RemoteFile.parseListing(isoResult.standardOutput, parentPath: path)
@@ -34,8 +34,7 @@ struct FileSystemService: FileSystemServiceProtocol {
         // same "yyyy-MM-dd HH:mm" format, so retry without the flag before
         // surfacing an error.
         let fallbackResult = try await runner.run(arguments: [
-            "-s", serial,
-            "shell", "ls", "-la", "-L", "--", path,
+            "-s", serial, "shell", "ls -la -L -- \(quotedPath)",
         ])
         guard fallbackResult.exitCode == 0 else {
             throw FileSystemServiceError.commandFailed(exitCode: fallbackResult.exitCode, standardError: fallbackResult.standardError)
@@ -44,29 +43,28 @@ struct FileSystemService: FileSystemServiceProtocol {
     }
 
     func delete(path: String, on serial: String) async throws {
-        try await runShellCommand(["-s", serial, "shell", "rm", "-rf", "--", path])
+        try await runShellCommand("rm -rf -- \(ShellQuoting.quote(path))", on: serial)
     }
 
     func rename(from oldPath: String, to newPath: String, on serial: String) async throws {
-        try await runShellCommand(["-s", serial, "shell", "mv", "--", oldPath, newPath])
+        try await runShellCommand("mv -- \(ShellQuoting.quote(oldPath)) \(ShellQuoting.quote(newPath))", on: serial)
     }
 
     func createFolder(path: String, on serial: String) async throws {
-        try await runShellCommand(["-s", serial, "shell", "mkdir", "--", path])
+        try await runShellCommand("mkdir -- \(ShellQuoting.quote(path))", on: serial)
     }
 
     func search(query: String, in path: String, on serial: String) async throws -> [String] {
-        let result = try await runner.run(arguments: [
-            "-s", serial, "shell", "find", path, "-iname", "*\(query)*",
-        ])
+        let command = "find \(ShellQuoting.quote(path)) -iname \(ShellQuoting.quote("*\(query)*"))"
+        let result = try await runner.run(arguments: ["-s", serial, "shell", command])
         guard result.exitCode == 0 else {
             throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)
         }
         return result.standardOutput.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
     }
 
-    private func runShellCommand(_ arguments: [String]) async throws {
-        let result = try await runner.run(arguments: arguments)
+    private func runShellCommand(_ command: String, on serial: String) async throws {
+        let result = try await runner.run(arguments: ["-s", serial, "shell", command])
         guard result.exitCode == 0 else {
             throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)
         }
