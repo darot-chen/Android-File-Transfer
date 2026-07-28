@@ -9,12 +9,19 @@ struct FileBrowserView: View {
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @State private var isDropTargeted = false
+    @State private var previewURL: URL?
+    @State private var isShowingSearch = false
+    @State private var deviceSearchQuery = ""
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             content
+        }
+        .background {
+            QuickLookHost(urlToPreview: $previewURL)
+                .frame(width: 0, height: 0)
         }
         .overlay {
             if isDropTargeted {
@@ -77,6 +84,12 @@ struct FileBrowserView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $isShowingSearch) {
+            DeviceSearchView(viewModel: viewModel, query: $deviceSearchQuery) { path in
+                isShowingSearch = false
+                Task { await viewModel.navigateToSearchResult(path) }
+            }
+        }
     }
 
     private var toolbar: some View {
@@ -111,6 +124,21 @@ struct FileBrowserView: View {
                 ProgressView()
                     .controlSize(.small)
             }
+
+            Button {
+                viewModel.toggleFavoriteCurrentFolder()
+            } label: {
+                Image(systemName: viewModel.isCurrentFolderFavorite ? "star.fill" : "star")
+            }
+            .help(viewModel.isCurrentFolderFavorite ? "Remove from Favorites" : "Add to Favorites")
+
+            Button {
+                deviceSearchQuery = ""
+                isShowingSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .help("Search Device…")
 
             Button {
                 newFolderName = ""
@@ -155,6 +183,13 @@ struct FileBrowserView: View {
                     }
                     .contextMenu {
                         if !entry.isDirectory {
+                            Button("Quick Look") {
+                                Task {
+                                    if let url = await viewModel.preview(entry) {
+                                        previewURL = url
+                                    }
+                                }
+                            }
                             Button("Download…") {
                                 if let destination = FilePanelPresenter.chooseSaveLocation(suggestedName: entry.name) {
                                     viewModel.download(entry, to: destination)
@@ -215,5 +250,44 @@ private struct FileRow: View {
     private var iconName: String {
         if entry.isSymlink { return "link" }
         return entry.isDirectory ? "folder.fill" : "doc"
+    }
+}
+
+private struct DeviceSearchView: View {
+    let viewModel: FileBrowserViewModel
+    @Binding var query: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TextField("Search \(viewModel.currentPath)…", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        viewModel.performRecursiveSearch(query: query)
+                    }
+                if viewModel.isSearching {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding()
+
+            Divider()
+
+            if viewModel.searchResults.isEmpty, !viewModel.isSearching {
+                ContentUnavailableView.search
+            } else {
+                List(viewModel.searchResults, id: \.self) { path in
+                    Button(path) {
+                        onSelect(path)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(minWidth: 480, minHeight: 360)
+        .onDisappear {
+            viewModel.cancelSearch()
+        }
     }
 }

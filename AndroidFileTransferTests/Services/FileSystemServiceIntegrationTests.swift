@@ -14,4 +14,13 @@ struct FileSystemServiceIntegrationTests {
             _ = try await service.listDirectory(path: "/sdcard", on: "nonexistent-serial")
         }
     }
+
+    @Test
+    func searchFailsGracefullyWithNoDeviceAttached() async throws {
+        let service = FileSystemService(runner: ADBProcessRunner())
+
+        await #expect(throws: FileSystemServiceError.self) {
+            _ = try await service.search(query: "photo", in: "/sdcard", on: "nonexistent-serial")
+        }
+    }
 }

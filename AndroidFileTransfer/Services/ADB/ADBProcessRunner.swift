@@ -1,5 +1,13 @@
 import Foundation
 
+// Process isn't Sendable, but it's only ever touched from run(arguments:)'s
+// own scope and this box's use is confined to that; onCancel below runs
+// outside actor isolation and needs a Sendable capture to call terminate().
+private final class ProcessBox: @unchecked Sendable {
+    let process: Process
+    init(_ process: Process) { self.process = process }
+}
+
 actor ADBProcessRunner: ADBProcessRunning {
     private let binaryURL: URL?
 
@@ -27,20 +35,30 @@ actor ADBProcessRunner: ADBProcessRunning {
             throw ADBProcessError.launchFailed(error.localizedDescription)
         }
 
-        // Only start draining the pipes after a confirmed launch, so a failed
-        // launch can't leave these waiting forever on a write end that never closes.
-        async let stdoutData = Self.readAll(stdoutPipe.fileHandleForReading)
-        async let stderrData = Self.readAll(stderrPipe.fileHandleForReading)
+        let box = ProcessBox(process)
 
-        await withCheckedContinuation { continuation in
-            process.terminationHandler = { _ in continuation.resume() }
+        return try await withTaskCancellationHandler {
+            // Only start draining the pipes after a confirmed launch, so a failed
+            // launch can't leave these waiting forever on a write end that never closes.
+            async let stdoutData = Self.readAll(stdoutPipe.fileHandleForReading)
+            async let stderrData = Self.readAll(stderrPipe.fileHandleForReading)
+
+            await withCheckedContinuation { continuation in
+                process.terminationHandler = { _ in continuation.resume() }
+            }
+
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+
+            return ADBProcessResult(
+                exitCode: process.terminationStatus,
+                standardOutput: String(decoding: await stdoutData, as: UTF8.self),
+                standardError: String(decoding: await stderrData, as: UTF8.self)
+            )
+        } onCancel: {
+            box.process.terminate()
         }
-
-        return ADBProcessResult(
-            exitCode: process.terminationStatus,
-            standardOutput: String(decoding: await stdoutData, as: UTF8.self),
-            standardError: String(decoding: await stderrData, as: UTF8.self)
-        )
     }
 
     // Reads via a dedicated GCD thread rather than FileHandle.bytes: the latter

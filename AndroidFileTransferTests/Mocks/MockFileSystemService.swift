@@ -18,6 +18,7 @@ struct CreateFolderCall: Sendable, Equatable {
 
 actor MockFileSystemService: FileSystemServiceProtocol {
     private var listingResult: Result<[RemoteFile], Error>
+    private var searchResult: Result<[String], Error>
     var deleteError: Error?
     var renameError: Error?
     var createFolderError: Error?
@@ -26,8 +27,9 @@ actor MockFileSystemService: FileSystemServiceProtocol {
     private(set) var renameCalls: [RenameCall] = []
     private(set) var createFolderCalls: [CreateFolderCall] = []
 
-    init(listingResult: Result<[RemoteFile], Error> = .success([])) {
+    init(listingResult: Result<[RemoteFile], Error> = .success([]), searchResult: Result<[String], Error> = .success([])) {
         self.listingResult = listingResult
+        self.searchResult = searchResult
     }
 
     func setListingResult(_ result: Result<[RemoteFile], Error>) {
@@ -55,5 +57,9 @@ actor MockFileSystemService: FileSystemServiceProtocol {
     func createFolder(path: String, on serial: String) async throws {
         createFolderCalls.append(CreateFolderCall(path: path, serial: serial))
         if let createFolderError { throw createFolderError }
+    }
+
+    func search(query: String, in path: String, on serial: String) async throws -> [String] {
+        try searchResult.get()
     }
 }

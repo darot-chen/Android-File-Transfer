@@ -4,6 +4,7 @@ struct ContentView: View {
     let environment: AppEnvironment
     @State private var deviceListViewModel: DeviceListViewModel
     @State private var selectedDeviceID: String?
+    @State private var pendingInitialPath: String?
     @State private var isShowingTransferQueue = false
 
     init(environment: AppEnvironment) {
@@ -13,12 +14,24 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            DeviceListView(viewModel: deviceListViewModel, selection: $selectedDeviceID)
-                .navigationTitle("Devices")
+            DeviceListView(
+                viewModel: deviceListViewModel,
+                favorites: environment.favorites,
+                onSelectFavorite: { favorite in
+                    selectedDeviceID = favorite.serial
+                    pendingInitialPath = favorite.path
+                },
+                selection: $selectedDeviceID
+            )
+            .navigationTitle("Devices")
         } detail: {
             if let selectedDeviceID {
-                FileBrowserContainerView(environment: environment, serial: selectedDeviceID)
-                    .id(selectedDeviceID)
+                FileBrowserContainerView(
+                    environment: environment,
+                    serial: selectedDeviceID,
+                    initialPath: pendingInitialPath ?? "/sdcard"
+                )
+                .id("\(selectedDeviceID)|\(pendingInitialPath ?? "")")
             } else {
                 Text("Select a device")
                     .foregroundStyle(.secondary)
@@ -47,12 +60,14 @@ struct ContentView: View {
 private struct FileBrowserContainerView: View {
     @State private var viewModel: FileBrowserViewModel
 
-    init(environment: AppEnvironment, serial: String) {
+    init(environment: AppEnvironment, serial: String, initialPath: String) {
         _viewModel = State(initialValue: FileBrowserViewModel(
             fileSystemService: environment.fileSystemService,
             transferService: environment.transferService,
             transferQueue: environment.transferQueue,
-            serial: serial
+            favorites: environment.favorites,
+            serial: serial,
+            initialPath: initialPath
         ))
     }
 

@@ -22,6 +22,7 @@ struct FileBrowserViewModelTests {
         fileSystemService: FileSystemServiceProtocol = MockFileSystemService(listingResult: .success([])),
         transferService: TransferServiceProtocol = MockTransferService(),
         transferQueue: TransferQueueViewModel? = nil,
+        favorites: FavoritesViewModel? = nil,
         serial: String = "SERIAL",
         initialPath: String = "/sdcard"
     ) -> FileBrowserViewModel {
@@ -32,6 +33,7 @@ struct FileBrowserViewModelTests {
                 transferService: transferService,
                 historyStore: MockTransferHistoryStore()
             ),
+            favorites: favorites ?? FavoritesViewModel(store: MockFavoritesStore()),
             serial: serial,
             initialPath: initialPath
         )
@@ -176,5 +178,74 @@ struct FileBrowserViewModelTests {
 
         #expect(transferable.remoteFile == file)
         #expect(transferable.serial == "R58N70ABCDE")
+    }
+
+    @Test
+    func previewPullsToPreviewCacheAndReturnsItsURL() async {
+        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)])
+        let viewModel = makeViewModel(transferService: transferService)
+        let file = makeFile("photo.jpg")
+
+        let url = await viewModel.preview(file)
+
+        #expect(url == PreviewCache.localURL(for: "photo.jpg"))
+        let calls = await transferService.pullCalls
+        #expect(calls == [PullCall(remotePath: "/sdcard/photo.jpg", localURL: PreviewCache.localURL(for: "photo.jpg"), serial: "SERIAL")])
+    }
+
+    @Test
+    func previewOfDirectoryReturnsNil() async {
+        let viewModel = makeViewModel()
+
+        let url = await viewModel.preview(makeFile("Download", isDirectory: true))
+
+        #expect(url == nil)
+    }
+
+    @Test
+    func toggleFavoriteAddsThenRemovesCurrentFolder() {
+        let favorites = FavoritesViewModel(store: MockFavoritesStore())
+        let viewModel = makeViewModel(favorites: favorites, serial: "SERIAL", initialPath: "/sdcard/DCIM")
+
+        #expect(viewModel.isCurrentFolderFavorite == false)
+
+        viewModel.toggleFavoriteCurrentFolder()
+        #expect(viewModel.isCurrentFolderFavorite == true)
+        #expect(favorites.favorites.count == 1)
+
+        viewModel.toggleFavoriteCurrentFolder()
+        #expect(viewModel.isCurrentFolderFavorite == false)
+        #expect(favorites.favorites.isEmpty)
+    }
+
+    @Test
+    func recursiveSearchPopulatesResults() async throws {
+        let fileSystemService = MockFileSystemService(searchResult: .success(["/sdcard/DCIM/a.jpg", "/sdcard/DCIM/b.jpg"]))
+        let viewModel = makeViewModel(fileSystemService: fileSystemService)
+
+        viewModel.performRecursiveSearch(query: "jpg")
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.searchResults == ["/sdcard/DCIM/a.jpg", "/sdcard/DCIM/b.jpg"])
+        #expect(viewModel.isSearching == false)
+    }
+
+    @Test
+    func emptyQueryClearsResultsWithoutSearching() {
+        let viewModel = makeViewModel()
+
+        viewModel.performRecursiveSearch(query: "")
+
+        #expect(viewModel.searchResults.isEmpty)
+        #expect(viewModel.isSearching == false)
+    }
+
+    @Test
+    func navigateToSearchResultGoesToParentFolder() async {
+        let viewModel = makeViewModel()
+
+        await viewModel.navigateToSearchResult("/sdcard/DCIM/photo.jpg")
+
+        #expect(viewModel.currentPath == "/sdcard/DCIM")
     }
 }

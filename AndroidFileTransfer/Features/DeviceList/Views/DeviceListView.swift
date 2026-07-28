@@ -2,12 +2,20 @@ import SwiftUI
 
 struct DeviceListView: View {
     let viewModel: DeviceListViewModel
+    let favorites: FavoritesViewModel
+    let onSelectFavorite: (Favorite) -> Void
     @Binding var selection: String?
 
     var body: some View {
-        List(viewModel.devices, selection: $selection) { device in
-            DeviceRow(device: device)
-                .tag(device.id)
+        List(selection: $selection) {
+            FavoritesView(viewModel: favorites, onSelect: onSelectFavorite)
+
+            Section("Devices") {
+                ForEach(viewModel.devices) { device in
+                    DeviceRow(device: device)
+                        .tag(device.id)
+                }
+            }
         }
         .overlay {
             if viewModel.devices.isEmpty {

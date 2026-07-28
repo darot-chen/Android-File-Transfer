@@ -16,21 +16,29 @@ final class FileBrowserViewModel {
     private(set) var errorMessage: String?
     var searchText: String = ""
 
+    private(set) var isPreviewing = false
+    private(set) var searchResults: [String] = []
+    private(set) var isSearching = false
+    private var searchTask: Task<Void, Never>?
+
     private let fileSystemService: FileSystemServiceProtocol
     private let transferService: TransferServiceProtocol
     private let transferQueue: TransferQueueViewModel
+    private let favorites: FavoritesViewModel
     let serial: String
 
     init(
         fileSystemService: FileSystemServiceProtocol,
         transferService: TransferServiceProtocol,
         transferQueue: TransferQueueViewModel,
+        favorites: FavoritesViewModel,
         serial: String,
         initialPath: String = "/sdcard"
     ) {
         self.fileSystemService = fileSystemService
         self.transferService = transferService
         self.transferQueue = transferQueue
+        self.favorites = favorites
         self.serial = serial
         self.currentPath = initialPath
     }
@@ -132,5 +140,68 @@ final class FileBrowserViewModel {
     /// driven synchronously by the OS drag session, not a user-tracked job.
     func transferable(for file: RemoteFile) -> RemoteFileTransferable {
         RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService)
+    }
+
+    func preview(_ file: RemoteFile) async -> URL? {
+        guard !file.isDirectory else { return nil }
+        isPreviewing = true
+        defer { isPreviewing = false }
+        let destination = PreviewCache.localURL(for: file.name)
+        do {
+            for try await _ in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {}
+            return destination
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    var isCurrentFolderFavorite: Bool {
+        favorites.isFavorite(serial: serial, path: currentPath)
+    }
+
+    func toggleFavoriteCurrentFolder() {
+        favorites.toggle(serial: serial, path: currentPath, name: (currentPath as NSString).lastPathComponent.isEmpty ? "/" : (currentPath as NSString).lastPathComponent)
+    }
+
+    func performRecursiveSearch(query: String) {
+        searchTask?.cancel()
+        guard !query.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchResults = []
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let results = try await fileSystemService.search(query: query, in: currentPath, on: serial)
+                if !Task.isCancelled {
+                    self.searchResults = results
+                }
+            } catch is CancellationError {
+                // Superseded by a newer search or explicitly cancelled; leave results as-is.
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = String(describing: error)
+                }
+            }
+            if !Task.isCancelled {
+                self.isSearching = false
+            }
+        }
+    }
+
+    func cancelSearch() {
+        searchTask?.cancel()
+        isSearching = false
+        searchResults = []
+    }
+
+    func navigateToSearchResult(_ path: String) async {
+        let parent = (path as NSString).deletingLastPathComponent
+        currentPath = parent.isEmpty ? "/" : parent
+        await load()
     }
 }
