@@ -17,6 +17,7 @@ struct CategoryBrowserView: View {
     @State private var lastSelectedID: String?
     @State private var sortField: FileSortField = .dateModified
     @State private var sortAscending = false
+    @FocusState private var isContentFocused: Bool
 
     private var files: [RemoteFile] { libraryViewModel.files(for: category) }
     private var sortedFiles: [RemoteFile] { FileSortField.sorted(files, by: sortField, ascending: sortAscending, directoriesFirst: false) }
@@ -27,6 +28,12 @@ struct CategoryBrowserView: View {
             Divider()
             content
         }
+        // See FileBrowserView's identical modifier for why this is needed:
+        // .onKeyPress only fires once something is actually focused, and a
+        // single click's selection change doesn't reliably grant that.
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isContentFocused)
         .background {
             QuickLookHost(urlToPreview: $previewURL)
                 .frame(width: 1, height: 1)
@@ -38,6 +45,12 @@ struct CategoryBrowserView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: isLoadingPreview)
         .navigationTitle(category.displayName)
+        .task {
+            isContentFocused = true
+        }
+        .onChange(of: selection) {
+            isContentFocused = true
+        }
         .onKeyPress(.space) {
             guard let file = files.first(where: { selection.contains($0.id) }) else { return .ignored }
             Task { await preview(file) }

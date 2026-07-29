@@ -19,6 +19,7 @@ struct FileBrowserView: View {
     @State private var sortField: FileSortField = .dateModified
     @State private var sortAscending = false
     @State private var lastSelectedID: String?
+    @FocusState private var isContentFocused: Bool
 
     static let dateColumnWidth: CGFloat = 140
     static let sizeColumnWidth: CGFloat = 90
@@ -33,6 +34,15 @@ struct FileBrowserView: View {
             Divider()
             content
         }
+        // .onKeyPress only receives events when something in this view is
+        // actually focused. Clicking a row's selection binding doesn't
+        // reliably make the List itself the AppKit first responder (only a
+        // double-click reliably did, which is why spacebar preview worked
+        // only after one) — so focus is grabbed explicitly here instead of
+        // depending on that incidental side effect.
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isContentFocused)
         .background {
             // A truly zero-size view can be skipped by SwiftUI's layout pass
             // and never actually attached to the window, which silently
@@ -73,9 +83,14 @@ struct FileBrowserView: View {
             if viewModel.entries.isEmpty {
                 await viewModel.load()
             }
+            isContentFocused = true
         }
         .onChange(of: viewModel.currentPath) {
             selection.removeAll()
+            isContentFocused = true
+        }
+        .onChange(of: selection) {
+            isContentFocused = true
         }
         .onKeyPress(.space) {
             guard let file = sortedEntries.first(where: { selection.contains($0.id) }), !file.isDirectory else {
