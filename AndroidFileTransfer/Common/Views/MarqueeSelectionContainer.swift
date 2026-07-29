@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private struct ItemFramePreferenceKey: PreferenceKey {
@@ -28,28 +29,17 @@ extension View {
 /// empty space to sweep out a selection rectangle, or click empty space to
 /// clear the selection. Individual cells keep their own tap/drag gestures —
 /// this only ever receives events that land in the gaps between/around them,
-/// since SwiftUI hit-tests the foreground `content` first.
+/// since AppKit hit-tests the foreground `content` (rendered on top) first.
 struct MarqueeSelectionContainer<Content: View>: View {
     @Binding var selection: Set<String>
     @ViewBuilder var content: Content
 
     @State private var itemFrames: [String: CGRect] = [:]
-    @State private var dragStart: CGPoint?
-    @State private var dragCurrent: CGPoint?
-
-    private var marqueeRect: CGRect? {
-        guard let dragStart, let dragCurrent else { return nil }
-        return CGRect(
-            x: min(dragStart.x, dragCurrent.x),
-            y: min(dragStart.y, dragCurrent.y),
-            width: abs(dragCurrent.x - dragStart.x),
-            height: abs(dragCurrent.y - dragStart.y)
-        )
-    }
+    @State private var marqueeRect: CGRect?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            backgroundInteractionLayer
+            MarqueeInteractionLayer(itemFrames: $itemFrames, selection: $selection, marqueeRect: $marqueeRect)
             content
             if let marqueeRect {
                 Rectangle()
@@ -63,26 +53,72 @@ struct MarqueeSelectionContainer<Content: View>: View {
         .coordinateSpace(name: "marqueeSelection")
         .onPreferenceChange(ItemFramePreferenceKey.self) { itemFrames = $0 }
     }
+}
 
-    private var backgroundInteractionLayer: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .named("marqueeSelection"))
-                    .onChanged { value in
-                        if dragStart == nil { dragStart = value.startLocation }
-                        dragCurrent = value.location
-                        if let marqueeRect {
-                            selection = Set(itemFrames.filter { $0.value.intersects(marqueeRect) }.map(\.key))
-                        }
-                    }
-                    .onEnded { _ in
-                        dragStart = nil
-                        dragCurrent = nil
-                    }
+/// Direct AppKit mouse handling for the marquee background, instead of a
+/// SwiftUI `DragGesture`, specifically to get `NSView.autoscroll(with:)` —
+/// the standard AppKit mechanism that makes an enclosing NSScrollView (what
+/// SwiftUI's `ScrollView` is backed by) scroll automatically while a drag
+/// point is near or past its visible edge. SwiftUI's gesture system has no
+/// equivalent, so a plain `DragGesture` marquee never scrolls to reveal more
+/// content while selecting.
+private struct MarqueeInteractionLayer: NSViewRepresentable {
+    @Binding var itemFrames: [String: CGRect]
+    @Binding var selection: Set<String>
+    @Binding var marqueeRect: CGRect?
+
+    func makeNSView(context: Context) -> InteractionView {
+        InteractionView()
+    }
+
+    func updateNSView(_ nsView: InteractionView, context: Context) {
+        nsView.itemFrames = itemFrames
+        nsView.selectionBinding = $selection
+        nsView.marqueeRectBinding = $marqueeRect
+    }
+
+    final class InteractionView: NSView {
+        var itemFrames: [String: CGRect] = [:]
+        var selectionBinding: Binding<Set<String>>?
+        var marqueeRectBinding: Binding<CGRect?>?
+
+        private var dragStart: NSPoint = .zero
+        private var didDrag = false
+
+        // SwiftUI's GeometryReader-reported frames (used for `itemFrames`)
+        // are top-left-origin/y-down; matching that here is what keeps the
+        // marquee rect's intersection math correct.
+        override var isFlipped: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            dragStart = convert(event.locationInWindow, from: nil)
+            didDrag = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            autoscroll(with: event)
+
+            let current = convert(event.locationInWindow, from: nil)
+            let distance = hypot(current.x - dragStart.x, current.y - dragStart.y)
+            guard distance > 2 else { return }
+            didDrag = true
+
+            let rect = CGRect(
+                x: min(dragStart.x, current.x),
+                y: min(dragStart.y, current.y),
+                width: abs(current.x - dragStart.x),
+                height: abs(current.y - dragStart.y)
             )
-            .onTapGesture {
-                selection.removeAll()
+            marqueeRectBinding?.wrappedValue = rect
+            selectionBinding?.wrappedValue = Set(itemFrames.filter { $0.value.intersects(rect) }.map(\.key))
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            if !didDrag {
+                selectionBinding?.wrappedValue = []
             }
+            marqueeRectBinding?.wrappedValue = nil
+            didDrag = false
+        }
     }
 }

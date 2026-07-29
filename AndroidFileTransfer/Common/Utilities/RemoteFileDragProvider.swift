@@ -56,6 +56,53 @@ enum RemoteFileDragProvider {
         item.setDraggingFrame(NSRect(x: 0, y: 0, width: 100, height: 100), contents: nil)
         return item
     }
+
+    /// Builds the dragging items for a whole multi-file selection with one
+    /// clean drag image (an icon + a count badge) instead of AppKit's
+    /// default: leaving every item's `contents` unset makes it auto-generate
+    /// a full icon-and-filename image per item and cascade them all in a
+    /// diagonal stack — unreadable and slow to render past a handful of
+    /// files. Only the first item gets a visible image; the rest are
+    /// functionally real drag items (so all N files are still part of the
+    /// drop) but rendered blank so they don't clutter the drag visually.
+    static func makeDraggingItems(files: [RemoteFile], serial: String, transferService: TransferServiceProtocol) -> [NSDraggingItem] {
+        guard !files.isEmpty else { return [] }
+        let frame = NSRect(x: 0, y: 0, width: 64, height: 64)
+        return files.enumerated().map { index, file in
+            let item = makeDraggingItem(file: file, serial: serial, transferService: transferService)
+            let image = index == 0 ? Self.multiFileDragImage(count: files.count, size: frame.size) : NSImage(size: frame.size)
+            item.setDraggingFrame(frame, contents: image)
+            return item
+        }
+    }
+
+    private static func multiFileDragImage(count: Int, size: NSSize) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSImage(systemSymbolName: "doc.on.doc.fill", accessibilityDescription: nil)?
+            .draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 0.9)
+
+        if count > 1 {
+            let badgeDiameter: CGFloat = size.width * 0.42
+            let badgeRect = NSRect(x: size.width - badgeDiameter, y: size.height - badgeDiameter, width: badgeDiameter, height: badgeDiameter)
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(ovalIn: badgeRect).fill()
+
+            let text = "\(count)" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: badgeDiameter * 0.5),
+                .foregroundColor: NSColor.white,
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            text.draw(
+                at: NSPoint(x: badgeRect.midX - textSize.width / 2, y: badgeRect.midY - textSize.height / 2),
+                withAttributes: attributes
+            )
+        }
+
+        image.unlockFocus()
+        return image
+    }
 }
 
 private nonisolated(unsafe) var filePromiseDelegateAssociationKey: UInt8 = 0

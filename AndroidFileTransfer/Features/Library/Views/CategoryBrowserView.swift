@@ -163,9 +163,7 @@ struct CategoryBrowserView: View {
         } else {
             targets = [file]
         }
-        return targets.map { target in
-            RemoteFileDragProvider.makeDraggingItem(file: target, serial: serial, transferService: transferService)
-        }
+        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: serial, transferService: transferService)
     }
 
     @ViewBuilder

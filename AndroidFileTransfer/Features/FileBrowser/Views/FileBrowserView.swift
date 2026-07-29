@@ -361,9 +361,7 @@ struct FileBrowserView: View {
         } else {
             targets = entry.isDirectory ? [] : [entry]
         }
-        return targets.map { file in
-            RemoteFileDragProvider.makeDraggingItem(file: file, serial: viewModel.serial, transferService: viewModel.transferService)
-        }
+        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: viewModel.serial, transferService: viewModel.transferService)
     }
 
     private func downloadSelection() {
