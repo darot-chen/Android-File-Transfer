@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AndroidFileTransfer
 
@@ -169,20 +170,24 @@ struct FileSystemServiceTests {
     }
 
     @Test
-    func scanFilesUsesExpectedArgumentsAndParsesPaths() async throws {
-        let output = "/sdcard/DCIM/a.jpg\n/sdcard/Download/b.pdf\n"
+    func scanFilesUsesExpectedArgumentsAndParsesPathsSizeAndDate() async throws {
+        let output = "12345 1700000000.5 /sdcard/DCIM/a.jpg\n67 1700000100.0 /sdcard/Download/b.pdf\n"
         let runner = MockADBProcessRunner(
             result: .success(ADBProcessResult(exitCode: 0, standardOutput: output, standardError: ""))
         )
         let service = FileSystemService(runner: runner)
 
-        let paths = try await service.scanFiles(under: "/sdcard", on: "R58N70ABCDE")
+        let files = try await service.scanFiles(under: "/sdcard", on: "R58N70ABCDE")
 
-        #expect(paths == ["/sdcard/DCIM/a.jpg", "/sdcard/Download/b.pdf"])
+        #expect(files.map(\.path) == ["/sdcard/DCIM/a.jpg", "/sdcard/Download/b.pdf"])
+        #expect(files.map(\.name) == ["a.jpg", "b.pdf"])
+        #expect(files.map(\.size) == [12345, 67])
+        #expect(files[0].modifiedAt == Date(timeIntervalSince1970: 1_700_000_000.5))
+        #expect(files.allSatisfy { !$0.isDirectory })
         let recorded = await runner.recordedArguments
         #expect(recorded == [[
             "-s", "R58N70ABCDE", "shell",
-            "find -L '/sdcard' \\( -path '*/Android/data' -o -path '*/Android/obb' \\) -prune -o -type f -print",
+            "find -L '/sdcard' \\( -path '*/Android/data' -o -path '*/Android/obb' \\) -prune -o -type f -printf '%s %T@ %p\\n'",
         ]])
     }
 

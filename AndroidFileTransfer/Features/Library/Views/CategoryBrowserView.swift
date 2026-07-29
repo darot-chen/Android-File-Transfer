@@ -13,8 +13,11 @@ struct CategoryBrowserView: View {
     @State private var previewURL: URL?
     @State private var selection: Set<String> = []
     @State private var lastSelectedID: String?
+    @State private var sortField: FileSortField = .name
+    @State private var sortAscending = true
 
     private var files: [RemoteFile] { libraryViewModel.files(for: category) }
+    private var sortedFiles: [RemoteFile] { FileSortField.sorted(files, by: sortField, ascending: sortAscending, directoriesFirst: false) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +43,7 @@ struct CategoryBrowserView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             ViewModePicker(mode: $viewMode)
+            SortMenuButton(sortField: $sortField, sortAscending: $sortAscending)
         }
         .padding(8)
     }
@@ -65,13 +69,22 @@ struct CategoryBrowserView: View {
     }
 
     private var listContent: some View {
-        List(files, selection: $selection) { file in
+        List(sortedFiles, selection: $selection) { file in
             HStack {
                 RemoteThumbnailView(file: file, serial: serial, transferService: transferService)
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 Text(file.name)
                 Spacer()
+                if let modifiedAt = file.modifiedAt {
+                    Text(modifiedAt, style: .date)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(file.formattedSize)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 70, alignment: .trailing)
             }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
@@ -86,7 +99,7 @@ struct CategoryBrowserView: View {
         ScrollView {
             MarqueeSelectionContainer(selection: $selection) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
-                    ForEach(files) { file in
+                    ForEach(sortedFiles) { file in
                         VStack(spacing: 6) {
                             RemoteThumbnailView(file: file, serial: serial, transferService: transferService)
                                 .frame(width: 100, height: 100)
@@ -131,10 +144,10 @@ struct CategoryBrowserView: View {
             }
         } else if modifiers.contains(.shift),
                   let lastSelectedID,
-                  let lastIndex = files.firstIndex(where: { $0.id == lastSelectedID }),
-                  let currentIndex = files.firstIndex(where: { $0.id == file.id }) {
+                  let lastIndex = sortedFiles.firstIndex(where: { $0.id == lastSelectedID }),
+                  let currentIndex = sortedFiles.firstIndex(where: { $0.id == file.id }) {
             let range = lastIndex < currentIndex ? lastIndex...currentIndex : currentIndex...lastIndex
-            for index in range { selection.insert(files[index].id) }
+            for index in range { selection.insert(sortedFiles[index].id) }
         } else {
             selection = [file.id]
         }
@@ -167,7 +180,7 @@ struct CategoryBrowserView: View {
         } else {
             Button("Download…") {
                 if let destination = FilePanelPresenter.chooseSaveLocation(suggestedName: file.name) {
-                    transferQueue.enqueueDownload(remotePath: file.path, localURL: destination, serial: serial, sizeBytes: file.size > 0 ? file.size : nil)
+                    transferQueue.enqueueDownload(remotePath: file.path, localURL: destination, serial: serial, sizeBytes: file.size)
                 }
             }
         }
@@ -177,7 +190,7 @@ struct CategoryBrowserView: View {
         guard let directory = FilePanelPresenter.chooseDownloadDirectory() else { return }
         for file in files where selection.contains(file.id) {
             let destination = directory.appendingPathComponent(file.name)
-            transferQueue.enqueueDownload(remotePath: file.path, localURL: destination, serial: serial, sizeBytes: file.size > 0 ? file.size : nil)
+            transferQueue.enqueueDownload(remotePath: file.path, localURL: destination, serial: serial, sizeBytes: file.size)
         }
     }
 

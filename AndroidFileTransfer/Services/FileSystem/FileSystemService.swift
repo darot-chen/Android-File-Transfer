@@ -1,10 +1,12 @@
+import Foundation
+
 protocol FileSystemServiceProtocol: Sendable {
     func listDirectory(path: String, on serial: String) async throws -> [RemoteFile]
     func delete(path: String, on serial: String) async throws
     func rename(from oldPath: String, to newPath: String, on serial: String) async throws
     func createFolder(path: String, on serial: String) async throws
     func search(query: String, in path: String, on serial: String) async throws -> [String]
-    func scanFiles(under root: String, on serial: String) async throws -> [String]
+    func scanFiles(under root: String, on serial: String) async throws -> [RemoteFile]
 }
 
 enum FileSystemServiceError: Error, Sendable, Equatable {
@@ -66,21 +68,46 @@ struct FileSystemService: FileSystemServiceProtocol {
         return result.standardOutput.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
     }
 
-    func scanFiles(under root: String, on serial: String) async throws -> [String] {
+    func scanFiles(under root: String, on serial: String) async throws -> [RemoteFile] {
         // Prune Android/data and Android/obb: per-app sandboxed storage that
         // isn't meaningful to browse as "your files" and can be an order of
         // magnitude larger than everything else combined (measured ~130k
         // files vs ~19k on a real device), which would make an unpruned scan
         // both slow and full of noise.
+        //
+        // -printf '%s %T@ %p' (verified supported by toybox find on a real
+        // device) gets size + modified-time + path in one pass, so Library
+        // sorting by date/size has real data instead of the size:0/nil this
+        // used to hand back.
         let quotedRoot = ShellQuoting.quote(root)
         let excludeData = ShellQuoting.quote("*/Android/data")
         let excludeObb = ShellQuoting.quote("*/Android/obb")
-        let command = "find -L \(quotedRoot) \\( -path \(excludeData) -o -path \(excludeObb) \\) -prune -o -type f -print"
+        let command = "find -L \(quotedRoot) \\( -path \(excludeData) -o -path \(excludeObb) \\) -prune -o -type f -printf '%s %T@ %p\\n'"
         let result = try await runner.run(arguments: ["-s", serial, "shell", command])
         guard result.exitCode == 0 else {
             throw FileSystemServiceError.commandFailed(exitCode: result.exitCode, standardError: result.standardError)
         }
-        return result.standardOutput.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        return result.standardOutput
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .compactMap { Self.parseScannedFile(String($0)) }
+    }
+
+    private static func parseScannedFile(_ line: String) -> RemoteFile? {
+        let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+        guard parts.count == 3, let size = Int64(parts[0]), let mtimeSeconds = Double(parts[1]) else {
+            return nil
+        }
+        let path = String(parts[2])
+        return RemoteFile(
+            name: (path as NSString).lastPathComponent,
+            path: path,
+            isDirectory: false,
+            isSymlink: false,
+            symlinkTarget: nil,
+            size: size,
+            modifiedAt: Date(timeIntervalSince1970: mtimeSeconds),
+            permissions: ""
+        )
     }
 
     private func runShellCommand(_ command: String, on serial: String) async throws {

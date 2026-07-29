@@ -28,16 +28,11 @@ final class LibraryViewModel {
         isScanning = true
         errorMessage = nil
         do {
-            let paths = try await fileSystemService.scanFiles(under: root, on: serial)
+            let scannedFiles = try await fileSystemService.scanFiles(under: root, on: serial)
             var grouped: [FileCategory: [RemoteFile]] = [:]
-            for path in paths {
-                guard !PathVisibility.isHidden(path) else { continue }
-                let name = (path as NSString).lastPathComponent
-                guard let category = FileCategory.category(forFileName: name) else { continue }
-                let file = RemoteFile(
-                    name: name, path: path, isDirectory: false, isSymlink: false,
-                    symlinkTarget: nil, size: 0, modifiedAt: nil, permissions: ""
-                )
+            for file in scannedFiles {
+                guard !PathVisibility.isHidden(file.path) else { continue }
+                guard let category = FileCategory.category(forFileName: file.name) else { continue }
                 grouped[category, default: []].append(file)
             }
             for key in grouped.keys {

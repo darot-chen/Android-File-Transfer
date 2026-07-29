@@ -2,12 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum FileSortField: Equatable {
-    case name
-    case dateModified
-    case size
-}
-
 struct FileBrowserView: View {
     @State var viewModel: FileBrowserViewModel
     @State private var fileToDelete: RemoteFile?
@@ -30,16 +24,7 @@ struct FileBrowserView: View {
     static let sizeColumnWidth: CGFloat = 90
 
     private var sortedEntries: [RemoteFile] {
-        viewModel.filteredEntries.sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
-            let ascending: Bool
-            switch sortField {
-            case .name: ascending = lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-            case .dateModified: ascending = (lhs.modifiedAt ?? .distantPast) < (rhs.modifiedAt ?? .distantPast)
-            case .size: ascending = lhs.size < rhs.size
-            }
-            return sortAscending ? ascending : !ascending
-        }
+        FileSortField.sorted(viewModel.filteredEntries, by: sortField, ascending: sortAscending)
     }
 
     var body: some View {
@@ -197,6 +182,8 @@ struct FileBrowserView: View {
             }
 
             ViewModePicker(mode: Binding(get: { viewModel.viewMode }, set: { viewModel.viewMode = $0 }))
+
+            SortMenuButton(sortField: $sortField, sortAscending: $sortAscending)
 
             Button {
                 viewModel.toggleFavoriteCurrentFolder()
