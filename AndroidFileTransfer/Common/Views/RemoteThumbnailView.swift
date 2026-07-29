@@ -29,8 +29,11 @@ struct RemoteThumbnailView: View {
     let transferService: TransferServiceProtocol
 
     /// Beyond this, pulling the whole file just to thumbnail it isn't worth
-    /// the wait — a real device video can run past 1GB.
-    private static let maxFullPullVideoSize: Int64 = 150 * 1024 * 1024
+    /// the wait — a real device video can run past 1GB. Raised from an
+    /// initial 150MB per user preference, trading a longer worst-case wait
+    /// (~500MB at this device's measured ~36 MB/s single-stream pull speed
+    /// is ~14s) for covering more real videos with an actual thumbnail.
+    private static let maxFullPullVideoSize: Int64 = 500 * 1024 * 1024
 
     @State private var thumbnailImage: NSImage?
     @State private var loadFailed = false
