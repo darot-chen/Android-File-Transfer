@@ -156,18 +156,39 @@ final class FileBrowserViewModel {
         transferQueue.enqueueUpload(localURL: localURL, remotePath: remotePath, serial: serial)
     }
 
+    /// Cancels a still-running previous preview before starting a new one —
+    /// otherwise rapid successive preview requests (e.g. spacebar-ing
+    /// through several files quickly) race, and whichever pull happens to
+    /// finish last wins even if it's no longer the file being looked at.
+    private var previewTask: Task<URL?, Never>?
+
     func preview(_ file: RemoteFile) async -> URL? {
         guard !file.isDirectory else { return nil }
+        previewTask?.cancel()
+
+        let destination = PreviewCache.localURL(for: file.path)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            return destination
+        }
+
         isPreviewing = true
         defer { isPreviewing = false }
-        let destination = PreviewCache.localURL(for: file.name)
-        do {
-            for try await _ in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {}
-            return destination
-        } catch {
-            errorMessage = String(describing: error)
-            return nil
+
+        let task = Task<URL?, Never> { [transferService, serial] in
+            do {
+                for try await _ in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {
+                    if Task.isCancelled { return nil }
+                }
+                return Task.isCancelled ? nil : destination
+            } catch {
+                if !Task.isCancelled {
+                    self.errorMessage = String(describing: error)
+                }
+                return nil
+            }
         }
+        previewTask = task
+        return await task.value
     }
 
     var isCurrentFolderFavorite: Bool {

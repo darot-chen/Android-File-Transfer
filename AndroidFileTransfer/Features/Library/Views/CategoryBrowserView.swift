@@ -11,6 +11,7 @@ struct CategoryBrowserView: View {
 
     @State private var viewMode: BrowserViewMode = .grid
     @State private var previewURL: URL?
+    @State private var previewTask: Task<URL?, Never>?
     @State private var selection: Set<String> = []
     @State private var lastSelectedID: String?
     @State private var sortField: FileSortField = .dateModified
@@ -196,12 +197,30 @@ struct CategoryBrowserView: View {
     }
 
     private func preview(_ file: RemoteFile) async {
-        let destination = PreviewCache.localURL(for: file.name)
-        do {
-            for try await _ in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {}
+        previewTask?.cancel()
+
+        let destination = PreviewCache.localURL(for: file.path)
+        if FileManager.default.fileExists(atPath: destination.path) {
             previewURL = destination
-        } catch {
-            logStore.log(.error, category: "Library", "Failed to preview \(file.path): \(error)")
+            return
+        }
+
+        let task = Task<URL?, Never> {
+            do {
+                for try await _ in transferService.pull(remotePath: file.path, localURL: destination, on: serial) {
+                    if Task.isCancelled { return nil }
+                }
+                return Task.isCancelled ? nil : destination
+            } catch {
+                if !Task.isCancelled {
+                    logStore.log(.error, category: "Library", "Failed to preview \(file.path): \(error)")
+                }
+                return nil
+            }
+        }
+        previewTask = task
+        if let url = await task.value {
+            previewURL = url
         }
     }
 }

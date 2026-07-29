@@ -220,9 +220,46 @@ struct FileBrowserViewModelTests {
 
         let url = await viewModel.preview(file)
 
-        #expect(url == PreviewCache.localURL(for: "photo.jpg"))
+        #expect(url == PreviewCache.localURL(for: "/sdcard/photo.jpg"))
         let calls = await transferService.pullCalls
-        #expect(calls == [PullCall(remotePath: "/sdcard/photo.jpg", localURL: PreviewCache.localURL(for: "photo.jpg"), serial: "SERIAL")])
+        #expect(calls == [PullCall(remotePath: "/sdcard/photo.jpg", localURL: PreviewCache.localURL(for: "/sdcard/photo.jpg"), serial: "SERIAL")])
+    }
+
+    @Test
+    func previewSkipsPullWhenAlreadyCached() async throws {
+        let file = makeFile("cached.jpg")
+        let cacheURL = PreviewCache.localURL(for: "/sdcard/cached.jpg")
+        try Data("cached".utf8).write(to: cacheURL)
+        defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)])
+        let viewModel = makeViewModel(transferService: transferService)
+
+        let url = await viewModel.preview(file)
+
+        #expect(url == cacheURL)
+        let calls = await transferService.pullCalls
+        #expect(calls.isEmpty)
+    }
+
+    @Test
+    func previewCancelsASupersededRequest() async throws {
+        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)], delay: .milliseconds(200))
+        let viewModel = makeViewModel(transferService: transferService)
+        let fileA = makeFile("a.jpg")
+        let fileB = makeFile("b.jpg")
+        defer {
+            try? FileManager.default.removeItem(at: PreviewCache.localURL(for: "/sdcard/a.jpg"))
+            try? FileManager.default.removeItem(at: PreviewCache.localURL(for: "/sdcard/b.jpg"))
+        }
+
+        let firstResultTask = Task { await viewModel.preview(fileA) }
+        try await Task.sleep(for: .milliseconds(50)) // let the first preview start and register itself
+        let secondResult = await viewModel.preview(fileB)
+        let firstResult = await firstResultTask.value
+
+        #expect(firstResult == nil)
+        #expect(secondResult == PreviewCache.localURL(for: "/sdcard/b.jpg"))
     }
 
     @Test
