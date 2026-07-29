@@ -213,17 +213,6 @@ struct FileBrowserViewModelTests {
     }
 
     @Test
-    func transferableForDragOutCarriesTheRightFileAndSerial() {
-        let viewModel = makeViewModel(serial: "R58N70ABCDE")
-        let file = makeFile("photo.jpg")
-
-        let transferable = viewModel.transferable(for: file)
-
-        #expect(transferable.remoteFile == file)
-        #expect(transferable.serial == "R58N70ABCDE")
-    }
-
-    @Test
     func previewPullsToPreviewCacheAndReturnsItsURL() async {
         let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)])
         let viewModel = makeViewModel(transferService: transferService)

@@ -78,7 +78,7 @@ struct CategoryBrowserView: View {
                 Task { await preview(file) }
             }
             .contextMenu { contextMenuItems(for: file) }
-            .draggable(RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService))
+            .onDrag { RemoteFileDragProvider.make(file: file, serial: serial, transferService: transferService) }
         }
     }
 
@@ -108,7 +108,7 @@ struct CategoryBrowserView: View {
                             Task { await preview(file) }
                         }
                         .contextMenu { contextMenuItems(for: file) }
-                        .draggable(RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService))
+                        .onDrag { RemoteFileDragProvider.make(file: file, serial: serial, transferService: transferService) }
                     }
                 }
                 .padding()

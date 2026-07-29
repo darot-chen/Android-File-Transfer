@@ -156,14 +156,6 @@ final class FileBrowserViewModel {
         transferQueue.enqueueUpload(localURL: localURL, remotePath: remotePath, serial: serial)
     }
 
-    /// Used for drag-out: SwiftUI resolves this lazily only once a drop
-    /// actually completes, so the download only happens if the user follows
-    /// through — unlike `download(_:to:)`, this bypasses the queue since it's
-    /// driven synchronously by the OS drag session, not a user-tracked job.
-    func transferable(for file: RemoteFile) -> RemoteFileTransferable {
-        RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService)
-    }
-
     func preview(_ file: RemoteFile) async -> URL? {
         guard !file.isDirectory else { return nil }
         isPreviewing = true

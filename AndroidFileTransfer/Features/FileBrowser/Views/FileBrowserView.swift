@@ -477,8 +477,8 @@ private struct SortHeaderButton: View {
     }
 }
 
-/// Applies .draggable only to non-directory rows/cells — factored out since
-/// both list and grid layouts need the identical conditional.
+/// Applies the drag-out promise only to non-directory rows/cells — factored
+/// out since both list and grid layouts need the identical conditional.
 private struct DraggableIfFile: ViewModifier {
     let entry: RemoteFile
     let viewModel: FileBrowserViewModel
@@ -487,7 +487,9 @@ private struct DraggableIfFile: ViewModifier {
         if entry.isDirectory {
             content
         } else {
-            content.draggable(viewModel.transferable(for: entry))
+            content.onDrag {
+                RemoteFileDragProvider.make(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+            }
         }
     }
 }
