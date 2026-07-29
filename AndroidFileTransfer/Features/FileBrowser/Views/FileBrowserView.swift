@@ -298,10 +298,15 @@ struct FileBrowserView: View {
                             RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
                                 .frame(width: 100, height: 100)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                            Text(entry.name)
+                            Text(entry.displayNameWithoutExtension)
                                 .font(.caption)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
+                            if !entry.isDirectory {
+                                Text(entry.formattedSize)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(6)
                         .background(selection.contains(entry.id) ? Color.accentColor.opacity(0.2) : Color.clear)

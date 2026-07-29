@@ -16,6 +16,14 @@ extension RemoteFile {
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
+
+    /// Just the base name, without extension — used in grid views where the
+    /// extension is redundant next to the thumbnail/icon itself. Only
+    /// applies to files; folder names are shown in full since a trailing
+    /// ".something" in a folder name isn't a file extension to hide.
+    var displayNameWithoutExtension: String {
+        isDirectory ? name : (name as NSString).deletingPathExtension
+    }
 }
 
 extension RemoteFile {
