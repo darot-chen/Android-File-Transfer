@@ -321,13 +321,16 @@ struct FileBrowserView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .contentShape(Rectangle())
                         .reportingFrame(id: entry.id)
-                        .onTapGesture(count: 1) {
-                            handleGridSelectionTap(entry)
-                        }
-                        .onTapGesture(count: 2) {
-                            Task { await viewModel.navigate(to: entry) }
-                        }
-                        .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
+                        .overlay(
+                            CellInteractionOverlay(
+                                itemID: entry.id,
+                                isPartOfMultiSelection: selection.count > 1 && selection.contains(entry.id),
+                                onPlainSelect: { handleGridSelectionTap(entry) },
+                                onModifiedSelect: { handleGridSelectionTap(entry) },
+                                onOpen: { Task { await viewModel.navigate(to: entry) } },
+                                dragItemsProvider: { dragItems(startingFrom: entry) }
+                            )
+                        )
                         .contextMenu { contextMenuItems(for: entry) }
                     }
                 }
@@ -359,6 +362,21 @@ struct FileBrowserView: View {
             selection = [entry.id]
         }
         lastSelectedID = entry.id
+    }
+
+    /// Drags the whole current selection if `entry` is part of a
+    /// multi-selection, otherwise just `entry` — mirroring Finder. Folders
+    /// aren't draggable out to Finder, so they're excluded either way.
+    private func dragItems(startingFrom entry: RemoteFile) -> [NSDraggingItem] {
+        let targets: [RemoteFile]
+        if selection.count > 1, selection.contains(entry.id) {
+            targets = sortedEntries.filter { selection.contains($0.id) && !$0.isDirectory }
+        } else {
+            targets = entry.isDirectory ? [] : [entry]
+        }
+        return targets.map { file in
+            RemoteFileDragProvider.makeDraggingItem(file: file, serial: viewModel.serial, transferService: viewModel.transferService)
+        }
     }
 
     private func downloadSelection() {

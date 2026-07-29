@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import ObjectiveC
 import UniformTypeIdentifiers
 
 enum RemoteFileDragProvider {
@@ -34,4 +36,66 @@ enum RemoteFileDragProvider {
         }
         return provider
     }
+
+    /// Builds an `NSDraggingItem` for a genuine multi-item AppKit drag
+    /// session (`NSView.beginDraggingSession(with:event:source:)`) — needed
+    /// because SwiftUI's `.onDrag`/`.draggable` only ever export a single
+    /// item per gesture regardless of selection. Uses `NSFilePromiseProvider`
+    /// rather than `NSItemProvider` since that's what actually conforms to
+    /// `NSPasteboardWriting` for this API, with the promise's filename
+    /// controlled explicitly via the delegate for the same reason `make(_:)`
+    /// above sets `suggestedName`.
+    static func makeDraggingItem(file: RemoteFile, serial: String, transferService: TransferServiceProtocol) -> NSDraggingItem {
+        let delegate = FilePromiseDelegate(file: file, serial: serial, transferService: transferService)
+        let provider = NSFilePromiseProvider(fileType: UTType.data.identifier, delegate: delegate)
+        // NSFilePromiseProvider.delegate is weak, and nothing else owns this
+        // delegate instance — associate it with the provider itself so it
+        // stays alive for as long as the drag session needs it.
+        objc_setAssociatedObject(provider, &filePromiseDelegateAssociationKey, delegate, .OBJC_ASSOCIATION_RETAIN)
+        let item = NSDraggingItem(pasteboardWriter: provider)
+        item.setDraggingFrame(NSRect(x: 0, y: 0, width: 100, height: 100), contents: nil)
+        return item
+    }
+}
+
+private nonisolated(unsafe) var filePromiseDelegateAssociationKey: UInt8 = 0
+
+private final class FilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate, @unchecked Sendable {
+    let file: RemoteFile
+    let serial: String
+    let transferService: TransferServiceProtocol
+
+    init(file: RemoteFile, serial: String, transferService: TransferServiceProtocol) {
+        self.file = file
+        self.serial = serial
+        self.transferService = transferService
+    }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
+        file.name
+    }
+
+    // Called by AppKit on a background queue once the drop target actually
+    // wants the bytes — matching the same "only pull if the user follows
+    // through" laziness as the single-item NSItemProvider path.
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping (Error?) -> Void) {
+        // completionHandler isn't Sendable-annotated in the AppKit overlay,
+        // so it can't be captured directly by a Task; box it so the compiler
+        // can see the capture itself is safe (it's only ever called once).
+        let box = CompletionHandlerBox(completionHandler)
+        Task {
+            do {
+                for try await _ in transferService.pull(remotePath: file.path, localURL: url, on: serial) {}
+                box.call(nil)
+            } catch {
+                box.call(error)
+            }
+        }
+    }
+}
+
+private final class CompletionHandlerBox: @unchecked Sendable {
+    private let handler: (Error?) -> Void
+    init(_ handler: @escaping (Error?) -> Void) { self.handler = handler }
+    func call(_ error: Error?) { handler(error) }
 }

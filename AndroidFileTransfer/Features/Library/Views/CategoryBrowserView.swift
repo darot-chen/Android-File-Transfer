@@ -101,14 +101,17 @@ struct CategoryBrowserView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .contentShape(Rectangle())
                         .reportingFrame(id: file.id)
-                        .onTapGesture(count: 1) {
-                            handleGridSelectionTap(file)
-                        }
-                        .onTapGesture(count: 2) {
-                            Task { await preview(file) }
-                        }
+                        .overlay(
+                            CellInteractionOverlay(
+                                itemID: file.id,
+                                isPartOfMultiSelection: selection.count > 1 && selection.contains(file.id),
+                                onPlainSelect: { handleGridSelectionTap(file) },
+                                onModifiedSelect: { handleGridSelectionTap(file) },
+                                onOpen: { Task { await preview(file) } },
+                                dragItemsProvider: { dragItems(startingFrom: file) }
+                            )
+                        )
                         .contextMenu { contextMenuItems(for: file) }
-                        .onDrag { RemoteFileDragProvider.make(file: file, serial: serial, transferService: transferService) }
                     }
                 }
                 .padding()
@@ -136,6 +139,20 @@ struct CategoryBrowserView: View {
             selection = [file.id]
         }
         lastSelectedID = file.id
+    }
+
+    /// Drags the whole current selection if `file` is part of a
+    /// multi-selection, otherwise just `file` — mirroring Finder.
+    private func dragItems(startingFrom file: RemoteFile) -> [NSDraggingItem] {
+        let targets: [RemoteFile]
+        if selection.count > 1, selection.contains(file.id) {
+            targets = files.filter { selection.contains($0.id) }
+        } else {
+            targets = [file]
+        }
+        return targets.map { target in
+            RemoteFileDragProvider.makeDraggingItem(file: target, serial: serial, transferService: transferService)
+        }
     }
 
     @ViewBuilder
