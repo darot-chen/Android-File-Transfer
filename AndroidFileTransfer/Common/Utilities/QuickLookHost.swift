@@ -45,9 +45,20 @@ final class QuickLookHostView: NSView {
         }
     }
 
-    func preview(url: URL) {
+    func preview(url: URL, retriesRemaining: Int = 5) {
         coordinator.previewItems = [url]
-        window?.makeFirstResponder(self)
+        // A zero-size background view can end up not yet attached to a
+        // window on the first call (SwiftUI attaches/lays out background
+        // views on its own schedule). Retrying a few times a tick later is
+        // cheap insurance against a silent no-op instead of a shown panel.
+        guard let window else {
+            guard retriesRemaining > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.preview(url: url, retriesRemaining: retriesRemaining - 1)
+            }
+            return
+        }
+        window.makeFirstResponder(self)
         guard let panel = QLPreviewPanel.shared() else { return }
         panel.reloadData()
         panel.makeKeyAndOrderFront(nil)

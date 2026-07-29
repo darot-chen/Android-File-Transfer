@@ -1,16 +1,20 @@
+import AVFoundation
 import ImageIO
 import SwiftUI
 
-/// Shows a real, lazily-loaded thumbnail for image files (pulled once to a
-/// per-launch cache, then decoded at a small pixel size — never the full
-/// bitmap in memory), and a representative icon for everything else.
+/// Shows a real, lazily-loaded thumbnail for image and video files, and a
+/// representative icon for everything else.
 ///
-/// Videos deliberately don't get a pulled-frame thumbnail: real device
-/// videos commonly run tens to hundreds of MB, and auto-pulling one per
-/// grid cell while scrolling a library of a thousand-plus videos would be
-/// slow and bandwidth-heavy for no real benefit over an icon. Use Quick
-/// Look (which already pulls on demand for a single file) to actually see
-/// a video.
+/// Both are loaded only when the view is actually on screen (SwiftUI cancels
+/// `.task` for cells scrolled out of a LazyVGrid/List), which bounds the cost
+/// to what's currently visible rather than the whole library. Images decode
+/// a small downsampled version straight from the pulled file. Videos are
+/// more expensive: this device's camera (like most Android camera apps)
+/// writes the `moov` atom at the *end* of the file rather than fast-start at
+/// the front — verified by inspecting a real recorded MP4's atom layout — so
+/// there's no cheap partial-download trick that yields a decodable frame.
+/// Getting a real frame requires pulling the whole file; the pulled copy is
+/// deleted immediately after extracting one frame so it doesn't linger on disk.
 struct RemoteThumbnailView: View {
     let file: RemoteFile
     let serial: String
@@ -50,7 +54,9 @@ struct RemoteThumbnailView: View {
     }
 
     private func loadIfNeeded() async {
-        guard !file.isDirectory, !loadFailed, FileCategory.category(forFileName: file.name) == .images else { return }
+        guard !file.isDirectory, !loadFailed else { return }
+        let category = FileCategory.category(forFileName: file.name)
+        guard category == .images || category == .videos else { return }
 
         let cacheURL = ThumbnailCache.localURL(for: file.path)
         if FileManager.default.fileExists(atPath: cacheURL.path) {
@@ -58,6 +64,14 @@ struct RemoteThumbnailView: View {
             return
         }
 
+        if category == .images {
+            await loadImageThumbnail(cacheURL: cacheURL)
+        } else {
+            await loadVideoThumbnail(cacheURL: cacheURL)
+        }
+    }
+
+    private func loadImageThumbnail(cacheURL: URL) async {
         do {
             for try await _ in transferService.pull(remotePath: file.path, localURL: cacheURL, on: serial) {
                 if Task.isCancelled { return }
@@ -67,6 +81,42 @@ struct RemoteThumbnailView: View {
         } catch {
             loadFailed = true
         }
+    }
+
+    private func loadVideoThumbnail(cacheURL: URL) async {
+        let tempVideoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AndroidFileTransferVideoThumb-\(UUID().uuidString)")
+            .appendingPathExtension((file.name as NSString).pathExtension)
+        defer { try? FileManager.default.removeItem(at: tempVideoURL) }
+
+        do {
+            for try await _ in transferService.pull(remotePath: file.path, localURL: tempVideoURL, on: serial) {
+                if Task.isCancelled { return }
+            }
+            if Task.isCancelled { return }
+            guard let frameData = await Self.extractVideoFrameJPEG(tempVideoURL) else {
+                loadFailed = true
+                return
+            }
+            try? frameData.write(to: cacheURL)
+            if Task.isCancelled { return }
+            thumbnailImage = Self.downsampled(cacheURL)
+        } catch {
+            loadFailed = true
+        }
+    }
+
+    private static func extractVideoFrameJPEG(_ url: URL, maxPixelSize: CGFloat = 240) async -> Data? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
+        // A hair after 0s to avoid a frequently-black opening frame.
+        guard let (cgImage, _) = try? await generator.image(at: CMTime(seconds: 0.3, preferredTimescale: 600)) else {
+            return nil
+        }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        return bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
     }
 
     private static func downsampled(_ url: URL, maxPixelSize: CGFloat = 240) -> NSImage? {

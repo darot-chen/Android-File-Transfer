@@ -11,6 +11,7 @@ private enum FileSortField: Equatable {
 struct FileBrowserView: View {
     @State var viewModel: FileBrowserViewModel
     @State private var fileToDelete: RemoteFile?
+    @State private var isConfirmingBatchDelete = false
     @State private var fileToRename: RemoteFile?
     @State private var renameText = ""
     @State private var isCreatingFolder = false
@@ -23,6 +24,7 @@ struct FileBrowserView: View {
     @State private var fileForProperties: RemoteFile?
     @State private var sortField: FileSortField = .name
     @State private var sortAscending = true
+    @State private var lastSelectedID: String?
 
     static let dateColumnWidth: CGFloat = 140
     static let sizeColumnWidth: CGFloat = 90
@@ -47,8 +49,11 @@ struct FileBrowserView: View {
             content
         }
         .background {
+            // A truly zero-size view can be skipped by SwiftUI's layout pass
+            // and never actually attached to the window, which silently
+            // breaks the Quick Look panel's makeFirstResponder call.
             QuickLookHost(urlToPreview: $previewURL)
-                .frame(width: 0, height: 0)
+                .frame(width: 1, height: 1)
         }
         .overlay {
             if isDropTargeted {
@@ -101,6 +106,18 @@ struct FileBrowserView: View {
                 if let file = fileToDelete {
                     Task { await viewModel.delete(file) }
                 }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) items?",
+            isPresented: $isConfirmingBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await deleteSelection() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -303,7 +320,7 @@ struct FileBrowserView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .contentShape(Rectangle())
                     .onTapGesture(count: 1) {
-                        selection = [entry.id]
+                        handleGridSelectionTap(entry)
                     }
                     .onTapGesture(count: 2) {
                         Task { await viewModel.navigate(to: entry) }
@@ -316,6 +333,42 @@ struct FileBrowserView: View {
             .contextMenu {
                 backgroundContextMenuItems
             }
+        }
+    }
+
+    /// Mirrors Finder's click/⌘-click/⇧-click semantics. Only the grid needs
+    /// this by hand — List(selection:) already gets it natively from AppKit.
+    private func handleGridSelectionTap(_ entry: RemoteFile) {
+        let modifiers = NSEvent.modifierFlags
+        if modifiers.contains(.command) {
+            if selection.contains(entry.id) {
+                selection.remove(entry.id)
+            } else {
+                selection.insert(entry.id)
+            }
+        } else if modifiers.contains(.shift),
+                  let lastSelectedID,
+                  let lastIndex = sortedEntries.firstIndex(where: { $0.id == lastSelectedID }),
+                  let currentIndex = sortedEntries.firstIndex(where: { $0.id == entry.id }) {
+            let range = lastIndex < currentIndex ? lastIndex...currentIndex : currentIndex...lastIndex
+            for index in range { selection.insert(sortedEntries[index].id) }
+        } else {
+            selection = [entry.id]
+        }
+        lastSelectedID = entry.id
+    }
+
+    private func downloadSelection() {
+        guard let directory = FilePanelPresenter.chooseDownloadDirectory() else { return }
+        for entry in sortedEntries where selection.contains(entry.id) && !entry.isDirectory {
+            let destination = directory.appendingPathComponent(entry.name)
+            viewModel.download(entry, to: destination)
+        }
+    }
+
+    private func deleteSelection() async {
+        for entry in sortedEntries where selection.contains(entry.id) {
+            await viewModel.delete(entry)
         }
     }
 
@@ -332,6 +385,15 @@ struct FileBrowserView: View {
 
     @ViewBuilder
     private func contextMenuItems(for entry: RemoteFile) -> some View {
+        if selection.count > 1, selection.contains(entry.id) {
+            Button("Download \(selection.count) Items…") {
+                downloadSelection()
+            }
+            Button("Delete \(selection.count) Items", role: .destructive) {
+                isConfirmingBatchDelete = true
+            }
+            Divider()
+        }
         Button("Open") {
             if entry.isDirectory {
                 Task { await viewModel.navigate(to: entry) }

@@ -11,7 +11,13 @@ struct RemoteFileTransferable: Transferable {
     let transferService: TransferServiceProtocol
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(exportedContentType: .data) { item in
+        // .item (not .data): .data has no associated filename extension, and
+        // Finder names a dropped file promise after the *declared UTType*
+        // when it can't resolve one from content, not the promise URL's own
+        // extension — so .data silently produced extensionless drops for
+        // every file type. .item is the generic "any file system item" type
+        // and lets Finder fall back to the actual exported file's name/extension.
+        FileRepresentation(exportedContentType: .item) { item in
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent(item.remoteFile.name)
             for try await _ in item.transferService.pull(remotePath: item.remoteFile.path, localURL: destination, on: item.serial) {}
             return SentTransferredFile(destination)
