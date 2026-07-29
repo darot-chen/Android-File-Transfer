@@ -84,32 +84,35 @@ struct CategoryBrowserView: View {
 
     private var gridContent: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
-                ForEach(files) { file in
-                    VStack(spacing: 6) {
-                        RemoteThumbnailView(file: file, serial: serial, transferService: transferService)
-                            .frame(width: 100, height: 100)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text(file.name)
-                            .font(.caption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
+            MarqueeSelectionContainer(selection: $selection) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
+                    ForEach(files) { file in
+                        VStack(spacing: 6) {
+                            RemoteThumbnailView(file: file, serial: serial, transferService: transferService)
+                                .frame(width: 100, height: 100)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Text(file.name)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(6)
+                        .background(selection.contains(file.id) ? Color.accentColor.opacity(0.2) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .contentShape(Rectangle())
+                        .reportingFrame(id: file.id)
+                        .onTapGesture(count: 1) {
+                            handleGridSelectionTap(file)
+                        }
+                        .onTapGesture(count: 2) {
+                            Task { await preview(file) }
+                        }
+                        .contextMenu { contextMenuItems(for: file) }
+                        .draggable(RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService))
                     }
-                    .padding(6)
-                    .background(selection.contains(file.id) ? Color.accentColor.opacity(0.2) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 1) {
-                        handleGridSelectionTap(file)
-                    }
-                    .onTapGesture(count: 2) {
-                        Task { await preview(file) }
-                    }
-                    .contextMenu { contextMenuItems(for: file) }
-                    .draggable(RemoteFileTransferable(remoteFile: file, serial: serial, transferService: transferService))
                 }
+                .padding()
             }
-            .padding()
         }
     }
 

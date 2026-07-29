@@ -304,32 +304,35 @@ struct FileBrowserView: View {
 
     private var gridContent: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
-                ForEach(sortedEntries) { entry in
-                    VStack(spacing: 6) {
-                        RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
-                            .frame(width: 100, height: 100)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text(entry.name)
-                            .font(.caption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
+            MarqueeSelectionContainer(selection: $selection) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
+                    ForEach(sortedEntries) { entry in
+                        VStack(spacing: 6) {
+                            RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                                .frame(width: 100, height: 100)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Text(entry.name)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(6)
+                        .background(selection.contains(entry.id) ? Color.accentColor.opacity(0.2) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .contentShape(Rectangle())
+                        .reportingFrame(id: entry.id)
+                        .onTapGesture(count: 1) {
+                            handleGridSelectionTap(entry)
+                        }
+                        .onTapGesture(count: 2) {
+                            Task { await viewModel.navigate(to: entry) }
+                        }
+                        .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
+                        .contextMenu { contextMenuItems(for: entry) }
                     }
-                    .padding(6)
-                    .background(selection.contains(entry.id) ? Color.accentColor.opacity(0.2) : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 1) {
-                        handleGridSelectionTap(entry)
-                    }
-                    .onTapGesture(count: 2) {
-                        Task { await viewModel.navigate(to: entry) }
-                    }
-                    .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
-                    .contextMenu { contextMenuItems(for: entry) }
                 }
+                .padding()
             }
-            .padding()
             .contextMenu {
                 backgroundContextMenuItems
             }
