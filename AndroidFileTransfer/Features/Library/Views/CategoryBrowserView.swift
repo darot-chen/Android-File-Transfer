@@ -12,6 +12,7 @@ struct CategoryBrowserView: View {
     @State private var viewMode: BrowserViewMode = .grid
     @State private var previewURL: URL?
     @State private var previewTask: Task<URL?, Never>?
+    @State private var isLoadingPreview = false
     @State private var selection: Set<String> = []
     @State private var lastSelectedID: String?
     @State private var sortField: FileSortField = .dateModified
@@ -30,6 +31,12 @@ struct CategoryBrowserView: View {
             QuickLookHost(urlToPreview: $previewURL)
                 .frame(width: 1, height: 1)
         }
+        .overlay {
+            if isLoadingPreview {
+                PreviewLoadingOverlay()
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isLoadingPreview)
         .navigationTitle(category.displayName)
         .onKeyPress(.space) {
             guard let file = files.first(where: { selection.contains($0.id) }) else { return .ignored }
@@ -204,6 +211,9 @@ struct CategoryBrowserView: View {
             previewURL = destination
             return
         }
+
+        isLoadingPreview = true
+        defer { isLoadingPreview = false }
 
         let task = Task<URL?, Never> {
             do {

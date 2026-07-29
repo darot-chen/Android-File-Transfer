@@ -48,6 +48,12 @@ struct FileBrowserView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            if viewModel.isPreviewing {
+                PreviewLoadingOverlay()
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isPreviewing)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
