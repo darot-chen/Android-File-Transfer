@@ -13,8 +13,8 @@ struct CategoryBrowserView: View {
     @State private var previewURL: URL?
     @State private var selection: Set<String> = []
     @State private var lastSelectedID: String?
-    @State private var sortField: FileSortField = .name
-    @State private var sortAscending = true
+    @State private var sortField: FileSortField = .dateModified
+    @State private var sortAscending = false
 
     private var files: [RemoteFile] { libraryViewModel.files(for: category) }
     private var sortedFiles: [RemoteFile] { FileSortField.sorted(files, by: sortField, ascending: sortAscending, directoriesFirst: false) }

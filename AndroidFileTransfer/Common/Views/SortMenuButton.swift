@@ -12,7 +12,7 @@ struct SortMenuButton: View {
                         sortAscending.toggle()
                     } else {
                         sortField = field
-                        sortAscending = true
+                        sortAscending = field.naturalDefaultAscending
                     }
                 } label: {
                     HStack {

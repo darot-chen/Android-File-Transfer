@@ -16,8 +16,8 @@ struct FileBrowserView: View {
     @State private var deviceSearchQuery = ""
     @State private var selection: Set<String> = []
     @State private var fileForProperties: RemoteFile?
-    @State private var sortField: FileSortField = .name
-    @State private var sortAscending = true
+    @State private var sortField: FileSortField = .dateModified
+    @State private var sortAscending = false
     @State private var lastSelectedID: String?
 
     static let dateColumnWidth: CGFloat = 140
@@ -465,7 +465,7 @@ private struct SortHeaderButton: View {
                 sortAscending.toggle()
             } else {
                 sortField = field
-                sortAscending = true
+                sortAscending = field.naturalDefaultAscending
             }
         } label: {
             HStack(spacing: 2) {
