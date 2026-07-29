@@ -8,6 +8,11 @@ enum RemoteFileDragProvider {
     /// only once a drop actually completes, promised under its real name and
     /// extension.
     ///
+    /// The pull is enqueued through `transferQueue` — the same queue
+    /// "Download…" uses — rather than called directly, so a drag-out shows
+    /// up with real progress in the Transfers panel instead of silently
+    /// pulling with no visible feedback at all.
+    ///
     /// Uses the legacy `.onDrag`/NSItemProvider API instead of SwiftUI's
     /// Transferable/`.draggable(_:)`: verified live against a real device
     /// that `FileRepresentation`'s promise mechanism ignored the exported
@@ -16,7 +21,7 @@ enum RemoteFileDragProvider {
     /// real filename, for every file dragged. Setting `suggestedName`
     /// explicitly on the item provider here is what actually controls the
     /// name Finder gives the dropped file.
-    static func make(file: RemoteFile, serial: String, transferService: TransferServiceProtocol) -> NSItemProvider {
+    static func make(file: RemoteFile, serial: String, transferQueue: TransferQueueViewModel) -> NSItemProvider {
         let provider = NSItemProvider()
         provider.suggestedName = file.name
         provider.registerFileRepresentation(forTypeIdentifier: UTType.data.identifier, visibility: .all) { completion in
@@ -26,7 +31,11 @@ enum RemoteFileDragProvider {
                 try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
                 let fileURL = destination.appendingPathComponent(file.name)
                 do {
-                    for try await _ in transferService.pull(remotePath: file.path, localURL: fileURL, on: serial) {}
+                    let itemID = await transferQueue.enqueueDownload(
+                        remotePath: file.path, localURL: fileURL, serial: serial,
+                        sizeBytes: file.size > 0 ? file.size : nil
+                    )
+                    try await transferQueue.waitForCompletion(of: itemID)
                     completion(fileURL, false, nil)
                 } catch {
                     completion(nil, false, error)
@@ -44,9 +53,10 @@ enum RemoteFileDragProvider {
     /// rather than `NSItemProvider` since that's what actually conforms to
     /// `NSPasteboardWriting` for this API, with the promise's filename
     /// controlled explicitly via the delegate for the same reason `make(_:)`
-    /// above sets `suggestedName`.
-    static func makeDraggingItem(file: RemoteFile, serial: String, transferService: TransferServiceProtocol) -> NSDraggingItem {
-        let delegate = FilePromiseDelegate(file: file, serial: serial, transferService: transferService)
+    /// above sets `suggestedName`, and the same transfer-queue routing for
+    /// visible progress.
+    static func makeDraggingItem(file: RemoteFile, serial: String, transferQueue: TransferQueueViewModel) -> NSDraggingItem {
+        let delegate = FilePromiseDelegate(file: file, serial: serial, transferQueue: transferQueue)
         let provider = NSFilePromiseProvider(fileType: UTType.data.identifier, delegate: delegate)
         // NSFilePromiseProvider.delegate is weak, and nothing else owns this
         // delegate instance — associate it with the provider itself so it
@@ -65,11 +75,11 @@ enum RemoteFileDragProvider {
     /// files. Only the first item gets a visible image; the rest are
     /// functionally real drag items (so all N files are still part of the
     /// drop) but rendered blank so they don't clutter the drag visually.
-    static func makeDraggingItems(files: [RemoteFile], serial: String, transferService: TransferServiceProtocol) -> [NSDraggingItem] {
+    static func makeDraggingItems(files: [RemoteFile], serial: String, transferQueue: TransferQueueViewModel) -> [NSDraggingItem] {
         guard !files.isEmpty else { return [] }
         let frame = NSRect(x: 0, y: 0, width: 64, height: 64)
         return files.enumerated().map { index, file in
-            let item = makeDraggingItem(file: file, serial: serial, transferService: transferService)
+            let item = makeDraggingItem(file: file, serial: serial, transferQueue: transferQueue)
             let image = index == 0 ? Self.multiFileDragImage(count: files.count, size: frame.size) : NSImage(size: frame.size)
             item.setDraggingFrame(frame, contents: image)
             return item
@@ -110,12 +120,12 @@ private nonisolated(unsafe) var filePromiseDelegateAssociationKey: UInt8 = 0
 private final class FilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate, @unchecked Sendable {
     let file: RemoteFile
     let serial: String
-    let transferService: TransferServiceProtocol
+    let transferQueue: TransferQueueViewModel
 
-    init(file: RemoteFile, serial: String, transferService: TransferServiceProtocol) {
+    init(file: RemoteFile, serial: String, transferQueue: TransferQueueViewModel) {
         self.file = file
         self.serial = serial
-        self.transferService = transferService
+        self.transferQueue = transferQueue
     }
 
     func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
@@ -132,7 +142,11 @@ private final class FilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate
         let box = CompletionHandlerBox(completionHandler)
         Task {
             do {
-                for try await _ in transferService.pull(remotePath: file.path, localURL: url, on: serial) {}
+                let itemID = await transferQueue.enqueueDownload(
+                    remotePath: file.path, localURL: url, serial: serial,
+                    sizeBytes: file.size > 0 ? file.size : nil
+                )
+                try await transferQueue.waitForCompletion(of: itemID)
                 box.call(nil)
             } catch {
                 box.call(error)

@@ -24,7 +24,7 @@ final class FileBrowserViewModel {
 
     private let fileSystemService: FileSystemServiceProtocol
     let transferService: TransferServiceProtocol
-    private let transferQueue: TransferQueueViewModel
+    let transferQueue: TransferQueueViewModel
     private let favorites: FavoritesViewModel
     private let recentFolders: RecentFoldersViewModel
     private let settings: SettingsViewModel

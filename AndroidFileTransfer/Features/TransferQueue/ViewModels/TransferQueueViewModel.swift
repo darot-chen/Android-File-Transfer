@@ -8,6 +8,10 @@ struct TransferMetrics: Sendable, Equatable {
     fileprivate let sampledAt: Date
 }
 
+struct TransferQueueItemFailed: Error, Sendable {
+    let message: String
+}
+
 @MainActor
 @Observable
 final class TransferQueueViewModel {
@@ -18,6 +22,7 @@ final class TransferQueueViewModel {
     private let historyStore: TransferHistoryStoring
     private var maxConcurrent: Int
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
+    private var completionWaiters: [UUID: [CheckedContinuation<Void, Error>]] = [:]
 
     init(transferService: TransferServiceProtocol, historyStore: TransferHistoryStoring, maxConcurrent: Int = 2) {
         self.transferService = transferService
@@ -41,12 +46,35 @@ final class TransferQueueViewModel {
         ))
     }
 
-    func enqueueDownload(remotePath: String, localURL: URL, serial: String, sizeBytes: Int64? = nil) {
-        enqueue(TransferItem(
+    @discardableResult
+    func enqueueDownload(remotePath: String, localURL: URL, serial: String, sizeBytes: Int64? = nil) -> UUID {
+        let item = TransferItem(
             id: UUID(), direction: .download, serial: serial,
             localURL: localURL, remotePath: remotePath, status: .queued, createdAt: Date(),
             sizeBytes: sizeBytes
-        ))
+        )
+        enqueue(item)
+        return item.id
+    }
+
+    /// Lets a caller that isn't just fire-and-forgetting a download (namely
+    /// drag-out promises, which need to know when the bytes are actually on
+    /// disk before telling Finder the drop succeeded) await a specific
+    /// item's outcome while it's still tracked — and thus visible with real
+    /// progress — in this same queue/panel, instead of pulling the file
+    /// through some separate untracked path with no UI at all.
+    func waitForCompletion(of id: UUID) async throws {
+        if let item = items.first(where: { $0.id == id }) {
+            switch item.status {
+            case .completed: return
+            case .failed(let message): throw TransferQueueItemFailed(message: message)
+            case .cancelled: throw CancellationError()
+            case .queued, .inProgress: break
+            }
+        }
+        try await withCheckedThrowingContinuation { continuation in
+            completionWaiters[id, default: []].append(continuation)
+        }
     }
 
     func retry(_ item: TransferItem) {
@@ -120,8 +148,27 @@ final class TransferQueueViewModel {
             }
             self.transferMetrics[item.id] = nil
             self.runningTasks[item.id] = nil
+            self.resolveWaiters(for: item.id)
             self.persist()
             self.processQueue()
+        }
+    }
+
+    private func resolveWaiters(for id: UUID) {
+        guard let waiters = completionWaiters.removeValue(forKey: id) else { return }
+        guard let item = items.first(where: { $0.id == id }) else {
+            for waiter in waiters { waiter.resume(throwing: CancellationError()) }
+            return
+        }
+        switch item.status {
+        case .completed:
+            for waiter in waiters { waiter.resume() }
+        case .failed(let message):
+            for waiter in waiters { waiter.resume(throwing: TransferQueueItemFailed(message: message)) }
+        case .cancelled:
+            for waiter in waiters { waiter.resume(throwing: CancellationError()) }
+        case .queued, .inProgress:
+            for waiter in waiters { waiter.resume(throwing: CancellationError()) }
         }
     }
 

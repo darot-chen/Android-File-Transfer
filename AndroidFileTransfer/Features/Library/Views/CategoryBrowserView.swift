@@ -112,7 +112,7 @@ struct CategoryBrowserView: View {
                 Task { await preview(file) }
             }
             .contextMenu { contextMenuItems(for: file) }
-            .onDrag { RemoteFileDragProvider.make(file: file, serial: serial, transferService: transferService) }
+            .onDrag { RemoteFileDragProvider.make(file: file, serial: serial, transferQueue: transferQueue) }
         }
     }
 
@@ -187,7 +187,7 @@ struct CategoryBrowserView: View {
         } else {
             targets = [file]
         }
-        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: serial, transferService: transferService)
+        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: serial, transferQueue: transferQueue)
     }
 
     @ViewBuilder

@@ -159,6 +159,43 @@ struct TransferQueueViewModelTests {
     }
 
     @Test
+    func waitForCompletionResolvesOnceTheDownloadSucceeds() async throws {
+        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)])
+        let viewModel = TransferQueueViewModel(transferService: transferService, historyStore: MockTransferHistoryStore())
+
+        let itemID = viewModel.enqueueDownload(remotePath: "/sdcard/a.jpg", localURL: URL(fileURLWithPath: "/tmp/a.jpg"), serial: "SERIAL")
+        try await viewModel.waitForCompletion(of: itemID)
+
+        #expect(viewModel.items.first { $0.id == itemID }?.status == .completed)
+    }
+
+    @Test
+    func waitForCompletionThrowsWhenTheDownloadFails() async {
+        struct SomeError: Error {}
+        let transferService = MockTransferService(pullProgress: [], pullFailure: SomeError())
+        let viewModel = TransferQueueViewModel(transferService: transferService, historyStore: MockTransferHistoryStore())
+
+        let itemID = viewModel.enqueueDownload(remotePath: "/sdcard/a.jpg", localURL: URL(fileURLWithPath: "/tmp/a.jpg"), serial: "SERIAL")
+
+        await #expect(throws: (any Error).self) {
+            try await viewModel.waitForCompletion(of: itemID)
+        }
+    }
+
+    @Test
+    func waitForCompletionReturnsImmediatelyForAnAlreadyCompletedItem() async throws {
+        let transferService = MockTransferService(pullProgress: [TransferProgress(percent: 100)])
+        let viewModel = TransferQueueViewModel(transferService: transferService, historyStore: MockTransferHistoryStore())
+
+        let itemID = viewModel.enqueueDownload(remotePath: "/sdcard/a.jpg", localURL: URL(fileURLWithPath: "/tmp/a.jpg"), serial: "SERIAL")
+        try await viewModel.waitForCompletion(of: itemID)
+
+        // Should resolve immediately from the already-terminal status rather
+        // than hanging waiting for a task that no longer exists.
+        try await viewModel.waitForCompletion(of: itemID)
+    }
+
+    @Test
     func interruptedInProgressItemsFromPriorRunLoadAsFailed() {
         let interrupted = TransferItem(
             id: UUID(), direction: .upload, serial: "SERIAL",

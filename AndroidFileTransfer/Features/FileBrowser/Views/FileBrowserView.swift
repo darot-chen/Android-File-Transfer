@@ -387,7 +387,7 @@ struct FileBrowserView: View {
         } else {
             targets = entry.isDirectory ? [] : [entry]
         }
-        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: viewModel.serial, transferService: viewModel.transferService)
+        return RemoteFileDragProvider.makeDraggingItems(files: targets, serial: viewModel.serial, transferQueue: viewModel.transferQueue)
     }
 
     private func downloadSelection() {
@@ -517,7 +517,7 @@ private struct DraggableIfFile: ViewModifier {
             content
         } else {
             content.onDrag {
-                RemoteFileDragProvider.make(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                RemoteFileDragProvider.make(file: entry, serial: viewModel.serial, transferQueue: viewModel.transferQueue)
             }
         }
     }
