@@ -28,6 +28,17 @@ struct LibraryViewModelTests {
     }
 
     @Test
+    func scanHidesDotfiles() async {
+        let paths = ["/sdcard/DCIM/vacation.jpg", "/sdcard/DCIM/.thumbnails/cache.jpg", "/sdcard/.nomedia"]
+        let fileSystemService = MockFileSystemService(scanResult: .success(paths))
+        let viewModel = LibraryViewModel(fileSystemService: fileSystemService, serial: "SERIAL")
+
+        await viewModel.scan()
+
+        #expect(viewModel.files(for: .images).map(\.name) == ["vacation.jpg"])
+    }
+
+    @Test
     func scanSortsFilesWithinACategory() async {
         let paths = ["/sdcard/z.jpg", "/sdcard/a.jpg", "/sdcard/m.jpg"]
         let fileSystemService = MockFileSystemService(scanResult: .success(paths))

@@ -75,10 +75,12 @@ final class FileBrowserViewModel {
         errorMessage = nil
         do {
             let listing = try await fileSystemService.listDirectory(path: currentPath, on: serial)
-            entries = listing.sorted { lhs, rhs in
-                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-            }
+            entries = listing
+                .filter { !$0.name.hasPrefix(".") }
+                .sorted { lhs, rhs in
+                    if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
+                    return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                }
         } catch {
             errorMessage = String(describing: error)
             logStore.log(.error, category: "FileBrowser", "Failed to list \(currentPath): \(error)")
@@ -192,7 +194,7 @@ final class FileBrowserViewModel {
             do {
                 let results = try await fileSystemService.search(query: query, in: currentPath, on: serial)
                 if !Task.isCancelled {
-                    self.searchResults = results
+                    self.searchResults = results.filter { !PathVisibility.isHidden($0) }
                 }
             } catch is CancellationError {
                 // Superseded by a newer search or explicitly cancelled; leave results as-is.

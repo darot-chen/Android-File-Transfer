@@ -54,6 +54,21 @@ struct FileBrowserViewModelTests {
     }
 
     @Test
+    func loadHidesDotfilesAndDotDirectories() async {
+        let files = [
+            makeFile("notes.txt"),
+            makeFile(".nomedia"),
+            makeFile(".thumbnails", isDirectory: true),
+            makeFile("Pictures", isDirectory: true),
+        ]
+        let viewModel = makeViewModel(fileSystemService: MockFileSystemService(listingResult: .success(files)))
+
+        await viewModel.load()
+
+        #expect(viewModel.entries.map(\.name) == ["Pictures", "notes.txt"])
+    }
+
+    @Test
     func loadSurfacesErrorMessage() async {
         struct SomeError: Error {}
         let viewModel = makeViewModel(fileSystemService: MockFileSystemService(listingResult: .failure(SomeError())))
@@ -243,6 +258,19 @@ struct FileBrowserViewModelTests {
 
         #expect(viewModel.searchResults == ["/sdcard/DCIM/a.jpg", "/sdcard/DCIM/b.jpg"])
         #expect(viewModel.isSearching == false)
+    }
+
+    @Test
+    func recursiveSearchHidesDotfiles() async throws {
+        let fileSystemService = MockFileSystemService(searchResult: .success([
+            "/sdcard/DCIM/a.jpg", "/sdcard/DCIM/.thumbnails/cache.jpg",
+        ]))
+        let viewModel = makeViewModel(fileSystemService: fileSystemService)
+
+        viewModel.performRecursiveSearch(query: "jpg")
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.searchResults == ["/sdcard/DCIM/a.jpg"])
     }
 
     @Test

@@ -31,6 +31,7 @@ final class LibraryViewModel {
             let paths = try await fileSystemService.scanFiles(under: root, on: serial)
             var grouped: [FileCategory: [RemoteFile]] = [:]
             for path in paths {
+                guard !PathVisibility.isHidden(path) else { continue }
                 let name = (path as NSString).lastPathComponent
                 guard let category = FileCategory.category(forFileName: name) else { continue }
                 let file = RemoteFile(
