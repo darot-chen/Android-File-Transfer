@@ -2,6 +2,28 @@ import Foundation
 import Testing
 @testable import AndroidFileTransfer
 
+/// Yields two progress samples with a real delay between them so tests can
+/// observe TransferQueueViewModel's mid-flight byte/speed tracking, which
+/// MockTransferService's queue-and-drain-immediately design can't exercise.
+private struct SlowProgressTransferService: TransferServiceProtocol {
+    func push(localURL: URL, remotePath: String, on serial: String) -> AsyncThrowingStream<TransferProgress, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                continuation.yield(TransferProgress(percent: 25, bytesTransferred: 250, totalBytes: 1000))
+                try? await Task.sleep(for: .milliseconds(80))
+                continuation.yield(TransferProgress(percent: 75, bytesTransferred: 750, totalBytes: 1000))
+                try? await Task.sleep(for: .milliseconds(80))
+                continuation.yield(TransferProgress(percent: 100, bytesTransferred: 1000, totalBytes: 1000))
+                continuation.finish()
+            }
+        }
+    }
+
+    func pull(remotePath: String, localURL: URL, on serial: String, expectedSize: Int64?) -> AsyncThrowingStream<TransferProgress, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+}
+
 @MainActor
 @Suite
 struct TransferQueueViewModelTests {
@@ -115,6 +137,25 @@ struct TransferQueueViewModelTests {
         viewModel.clearCompleted()
 
         #expect(viewModel.items.isEmpty)
+    }
+
+    @Test
+    func inProgressTransferExposesByteMetricsAndSpeed() async throws {
+        let viewModel = TransferQueueViewModel(transferService: SlowProgressTransferService(), historyStore: MockTransferHistoryStore())
+
+        viewModel.enqueueUpload(localURL: URL(fileURLWithPath: "/tmp/a.txt"), remotePath: "/sdcard/a.txt", serial: "SERIAL")
+        try await Task.sleep(for: .milliseconds(120))
+
+        let itemID = viewModel.items[0].id
+        let metrics = viewModel.transferMetrics[itemID]
+        #expect(metrics?.bytesTransferred == 750)
+        #expect(metrics?.totalBytes == 1000)
+        #expect(metrics?.bytesPerSecond != nil)
+
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(viewModel.items[0].status == .completed)
+        // Metrics are cleared once the transfer finishes so a later retry starts fresh.
+        #expect(viewModel.transferMetrics[itemID] == nil)
     }
 
     @Test

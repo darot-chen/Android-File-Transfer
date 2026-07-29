@@ -10,7 +10,7 @@ struct DeviceListViewModelTests {
             "",
             "R58N70ABCDE\tdevice product:beyond1lte model:SM_G973F device:beyond1 transport_id:3",
         ])
-        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming))
+        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming), detailsService: MockDeviceDetailsService())
 
         viewModel.startObserving()
         try await Task.sleep(for: .milliseconds(50))
@@ -23,7 +23,7 @@ struct DeviceListViewModelTests {
         let streaming = MockADBDeviceStreaming(snapshots: [
             "R58N70ABCDE\tdevice product:beyond1lte model:SM_G973F device:beyond1 transport_id:3",
         ])
-        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming))
+        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming), detailsService: MockDeviceDetailsService())
 
         viewModel.startObserving()
         viewModel.startObserving()
@@ -34,7 +34,7 @@ struct DeviceListViewModelTests {
 
     @Test
     func stopObservingDoesNotCrashWhenCalledBeforeStart() {
-        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: MockADBDeviceStreaming(snapshots: [])))
+        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: MockADBDeviceStreaming(snapshots: [])), detailsService: MockDeviceDetailsService())
 
         viewModel.stopObserving()
 
@@ -48,7 +48,7 @@ struct DeviceListViewModelTests {
             snapshots: ["R58N70ABCDE\tdevice product:beyond1lte model:SM_G973F device:beyond1 transport_id:3"],
             failure: SomeError()
         )
-        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming))
+        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming), detailsService: MockDeviceDetailsService())
 
         viewModel.startObserving()
         try await Task.sleep(for: .milliseconds(50))

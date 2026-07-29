@@ -55,7 +55,7 @@ actor MockTransferService: TransferServiceProtocol {
         }
     }
 
-    nonisolated func pull(remotePath: String, localURL: URL, on serial: String) -> AsyncThrowingStream<TransferProgress, Error> {
+    nonisolated func pull(remotePath: String, localURL: URL, on serial: String, expectedSize: Int64?) -> AsyncThrowingStream<TransferProgress, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 await self.recordPull(remotePath: remotePath, localURL: localURL, serial: serial)

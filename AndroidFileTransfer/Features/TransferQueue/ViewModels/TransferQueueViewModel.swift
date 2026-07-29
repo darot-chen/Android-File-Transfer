@@ -1,10 +1,18 @@
 import Foundation
 import Observation
 
+struct TransferMetrics: Sendable, Equatable {
+    let bytesTransferred: Int64
+    let totalBytes: Int64?
+    let bytesPerSecond: Double?
+    fileprivate let sampledAt: Date
+}
+
 @MainActor
 @Observable
 final class TransferQueueViewModel {
     private(set) var items: [TransferItem] = []
+    private(set) var transferMetrics: [UUID: TransferMetrics] = [:]
 
     private let transferService: TransferServiceProtocol
     private let historyStore: TransferHistoryStoring
@@ -33,10 +41,11 @@ final class TransferQueueViewModel {
         ))
     }
 
-    func enqueueDownload(remotePath: String, localURL: URL, serial: String) {
+    func enqueueDownload(remotePath: String, localURL: URL, serial: String, sizeBytes: Int64? = nil) {
         enqueue(TransferItem(
             id: UUID(), direction: .download, serial: serial,
-            localURL: localURL, remotePath: remotePath, status: .queued, createdAt: Date()
+            localURL: localURL, remotePath: remotePath, status: .queued, createdAt: Date(),
+            sizeBytes: sizeBytes
         ))
     }
 
@@ -94,7 +103,7 @@ final class TransferQueueViewModel {
         case .upload:
             transferService.push(localURL: item.localURL, remotePath: item.remotePath, on: item.serial)
         case .download:
-            transferService.pull(remotePath: item.remotePath, localURL: item.localURL, on: item.serial)
+            transferService.pull(remotePath: item.remotePath, localURL: item.localURL, on: item.serial, expectedSize: item.sizeBytes)
         }
 
         runningTasks[item.id] = Task { [weak self] in
@@ -102,16 +111,43 @@ final class TransferQueueViewModel {
             do {
                 for try await progress in stream {
                     if Task.isCancelled { break }
+                    self.recordMetrics(itemID: item.id, progress: progress)
                     self.update(itemID: item.id) { $0.status = .inProgress(percent: progress.percent) }
                 }
                 self.update(itemID: item.id) { $0.status = Task.isCancelled ? .cancelled : .completed }
             } catch {
                 self.update(itemID: item.id) { $0.status = Task.isCancelled ? .cancelled : .failed(message: String(describing: error)) }
             }
+            self.transferMetrics[item.id] = nil
             self.runningTasks[item.id] = nil
             self.persist()
             self.processQueue()
         }
+    }
+
+    // Speed is derived session-side from consecutive byte samples (adb itself
+    // never reports throughput mid-transfer — see TransferService), smoothed
+    // with a simple exponential moving average so brief stalls in the
+    // underlying `stat`/file-size poll don't make the displayed rate jump around.
+    private func recordMetrics(itemID: UUID, progress: TransferProgress) {
+        let now = Date()
+        var bytesPerSecond: Double?
+        if let previous = transferMetrics[itemID] {
+            let deltaBytes = progress.bytesTransferred - previous.bytesTransferred
+            let deltaTime = now.timeIntervalSince(previous.sampledAt)
+            if deltaTime > 0.05, deltaBytes >= 0 {
+                let instantaneous = Double(deltaBytes) / deltaTime
+                bytesPerSecond = previous.bytesPerSecond.map { $0 * 0.6 + instantaneous * 0.4 } ?? instantaneous
+            } else {
+                bytesPerSecond = previous.bytesPerSecond
+            }
+        }
+        transferMetrics[itemID] = TransferMetrics(
+            bytesTransferred: progress.bytesTransferred,
+            totalBytes: progress.totalBytes,
+            bytesPerSecond: bytesPerSecond,
+            sampledAt: now
+        )
     }
 
     private func update(itemID: UUID, _ mutate: (inout TransferItem) -> Void) {

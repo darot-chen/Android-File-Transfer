@@ -21,6 +21,7 @@ struct TransferItem: Identifiable, Sendable, Equatable, Codable {
     let remotePath: String
     var status: Status
     let createdAt: Date
+    var sizeBytes: Int64? = nil
 
     var displayName: String {
         direction == .upload ? localURL.lastPathComponent : (remotePath as NSString).lastPathComponent

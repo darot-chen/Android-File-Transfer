@@ -2,17 +2,33 @@ import SwiftUI
 
 struct TransferQueueView: View {
     let viewModel: TransferQueueViewModel
+    var onClose: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("Transfers")
                     .font(.headline)
+                if !viewModel.items.isEmpty {
+                    Text("\(viewModel.items.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Clear Completed") {
                     viewModel.clearCompleted()
                 }
                 .disabled(!hasCompletedOrCancelled)
+                if let onClose {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide Transfers")
+                }
             }
             .padding()
 
@@ -30,7 +46,6 @@ struct TransferQueueView: View {
                 }
             }
         }
-        .frame(minWidth: 360, minHeight: 320)
     }
 
     private var hasCompletedOrCancelled: Bool {
@@ -47,6 +62,8 @@ private struct TransferRow: View {
     let item: TransferItem
     let viewModel: TransferQueueViewModel
 
+    private var metrics: TransferMetrics? { viewModel.transferMetrics[item.id] }
+
     var body: some View {
         HStack {
             Image(systemName: item.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
@@ -54,9 +71,23 @@ private struct TransferRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.displayName)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if case .inProgress(let percent) = item.status, let metrics, let totalBytes = metrics.totalBytes {
+                    ProgressView(value: Double(percent), total: 100)
+                        .frame(maxWidth: 160)
+                    Text(progressDetailText(metrics: metrics, totalBytes: totalBytes))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if case .inProgress = item.status {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -75,6 +106,37 @@ private struct TransferRow: View {
             }
         }
     }
+
+    private func progressDetailText(metrics: TransferMetrics, totalBytes: Int64) -> String {
+        let transferred = Self.byteFormatter.string(fromByteCount: metrics.bytesTransferred)
+        let total = Self.byteFormatter.string(fromByteCount: totalBytes)
+        var parts = ["\(transferred) of \(total)"]
+        if let bytesPerSecond = metrics.bytesPerSecond, bytesPerSecond > 0 {
+            parts.append("\(Self.byteFormatter.string(fromByteCount: Int64(bytesPerSecond)))/s")
+            let remainingBytes = totalBytes - metrics.bytesTransferred
+            if remainingBytes > 0 {
+                let etaSeconds = Double(remainingBytes) / bytesPerSecond
+                if let eta = Self.durationFormatter.string(from: etaSeconds) {
+                    parts.append("\(eta) remaining")
+                }
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
+
+    private static let durationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
 
     private var iconColor: Color {
         switch item.status {

@@ -5,12 +5,19 @@ import Observation
 @Observable
 final class DeviceListViewModel {
     private(set) var devices: [Device] = []
+    private(set) var detailsBySerial: [String: DeviceDetails] = [:]
 
     private let deviceService: DeviceServiceProtocol
+    private let detailsService: DeviceDetailsServiceProtocol
     private var observationTask: Task<Void, Never>?
 
-    init(deviceService: DeviceServiceProtocol) {
+    init(deviceService: DeviceServiceProtocol, detailsService: DeviceDetailsServiceProtocol) {
         self.deviceService = deviceService
+        self.detailsService = detailsService
+    }
+
+    func refreshDetails(for serial: String) async {
+        detailsBySerial[serial] = await detailsService.fetchDetails(serial: serial)
     }
 
     func startObserving() {

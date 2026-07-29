@@ -13,17 +13,46 @@ struct ContentView: View {
 
     init(environment: AppEnvironment) {
         self.environment = environment
-        _deviceListViewModel = State(initialValue: DeviceListViewModel(deviceService: environment.deviceService))
+        _deviceListViewModel = State(initialValue: DeviceListViewModel(
+            deviceService: environment.deviceService,
+            detailsService: environment.deviceDetailsService
+        ))
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            mainSplitView
+            if isShowingTransferQueue {
+                Divider()
+                TransferQueueView(viewModel: environment.transferQueue) {
+                    isShowingTransferQueue = false
+                }
+                .frame(height: 220)
+                .transition(.move(edge: .bottom))
+            }
+        }
+        .animation(.default, value: isShowingTransferQueue)
+        .onChange(of: environment.transferQueue.items.count) { oldValue, newValue in
+            if newValue > oldValue {
+                isShowingTransferQueue = true
+            }
+        }
+    }
+
+    private var mainSplitView: some View {
         NavigationSplitView {
             DeviceListView(
                 viewModel: deviceListViewModel,
                 favorites: environment.favorites,
+                recentFolders: environment.recentFolders,
                 onSelectFavorite: { favorite in
                     selectedDeviceID = favorite.serial
                     pendingInitialPath = favorite.path
+                    selectedDestination = .files
+                },
+                onSelectRecentFolder: { recentFolder in
+                    selectedDeviceID = recentFolder.serial
+                    pendingInitialPath = recentFolder.path
                     selectedDestination = .files
                 },
                 selection: $selectedDeviceID
@@ -68,9 +97,9 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem {
                 Button {
-                    isShowingTransferQueue = true
+                    isShowingTransferQueue.toggle()
                 } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle")
+                    Image(systemName: isShowingTransferQueue ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
                 }
                 .help("Transfers")
                 .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -92,9 +121,6 @@ struct ContentView: View {
                 .help("Settings")
                 .keyboardShortcut(",", modifiers: .command)
             }
-        }
-        .sheet(isPresented: $isShowingTransferQueue) {
-            TransferQueueView(viewModel: environment.transferQueue)
         }
         .sheet(isPresented: $isShowingLogs) {
             LogsView(logStore: environment.logStore)
@@ -126,6 +152,7 @@ private struct FileBrowserContainerView: View {
             transferService: environment.transferService,
             transferQueue: environment.transferQueue,
             favorites: environment.favorites,
+            recentFolders: environment.recentFolders,
             settings: environment.settings,
             logStore: environment.logStore,
             serial: serial,

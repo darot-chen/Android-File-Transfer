@@ -1,5 +1,12 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+
+private enum FileSortField: Equatable {
+    case name
+    case dateModified
+    case size
+}
 
 struct FileBrowserView: View {
     @State var viewModel: FileBrowserViewModel
@@ -12,6 +19,26 @@ struct FileBrowserView: View {
     @State private var previewURL: URL?
     @State private var isShowingSearch = false
     @State private var deviceSearchQuery = ""
+    @State private var selection: Set<String> = []
+    @State private var fileForProperties: RemoteFile?
+    @State private var sortField: FileSortField = .name
+    @State private var sortAscending = true
+
+    static let dateColumnWidth: CGFloat = 140
+    static let sizeColumnWidth: CGFloat = 90
+
+    private var sortedEntries: [RemoteFile] {
+        viewModel.filteredEntries.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
+            let ascending: Bool
+            switch sortField {
+            case .name: ascending = lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            case .dateModified: ascending = (lhs.modifiedAt ?? .distantPast) < (rhs.modifiedAt ?? .distantPast)
+            case .size: ascending = lhs.size < rhs.size
+            }
+            return sortAscending ? ascending : !ascending
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +78,20 @@ struct FileBrowserView: View {
                 await viewModel.load()
             }
         }
+        .onChange(of: viewModel.currentPath) {
+            selection.removeAll()
+        }
+        .onKeyPress(.space) {
+            guard let file = sortedEntries.first(where: { selection.contains($0.id) }), !file.isDirectory else {
+                return .ignored
+            }
+            Task {
+                if let url = await viewModel.preview(file) {
+                    previewURL = url
+                }
+            }
+            return .handled
+        }
         .confirmationDialog(
             "Delete “\(fileToDelete?.name ?? "")”?",
             isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }),
@@ -89,6 +130,9 @@ struct FileBrowserView: View {
                 isShowingSearch = false
                 Task { await viewModel.navigateToSearchResult(path) }
             }
+        }
+        .sheet(item: $fileForProperties) { file in
+            FilePropertiesView(file: file)
         }
     }
 
@@ -163,15 +207,25 @@ struct FileBrowserView: View {
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Button {
-                if let url = FilePanelPresenter.chooseFileToUpload() {
-                    viewModel.upload(from: url)
-                }
+                uploadFilePicker()
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
             .help("Upload File…")
         }
         .padding(8)
+    }
+
+    private func uploadFilePicker(into directoryPath: String? = nil) {
+        if let url = FilePanelPresenter.chooseFileToUpload() {
+            viewModel.upload(from: url, into: directoryPath)
+        }
+    }
+
+    private func copyPathToPasteboard(_ path: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(path, forType: .string)
     }
 
     @ViewBuilder
@@ -198,22 +252,43 @@ struct FileBrowserView: View {
         }
     }
 
+    private var columnHeader: some View {
+        HStack(spacing: 8) {
+            SortHeaderButton(title: "Name", field: .name, sortField: $sortField, sortAscending: $sortAscending)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            SortHeaderButton(title: "Date Modified", field: .dateModified, sortField: $sortField, sortAscending: $sortAscending)
+                .frame(width: Self.dateColumnWidth, alignment: .leading)
+            SortHeaderButton(title: "Size", field: .size, sortField: $sortField, sortAscending: $sortAscending)
+                .frame(width: Self.sizeColumnWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+    }
+
     private var listContent: some View {
-        List(viewModel.filteredEntries) { entry in
-            FileRow(entry: entry, serial: viewModel.serial, transferService: viewModel.transferService)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    Task { await viewModel.navigate(to: entry) }
-                }
-                .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
-                .contextMenu { contextMenuItems(for: entry) }
+        VStack(spacing: 0) {
+            columnHeader
+            Divider()
+            List(sortedEntries, selection: $selection) { entry in
+                FileRow(entry: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        Task { await viewModel.navigate(to: entry) }
+                    }
+                    .modifier(DraggableIfFile(entry: entry, viewModel: viewModel))
+                    .contextMenu { contextMenuItems(for: entry) }
+            }
+            .contextMenu {
+                backgroundContextMenuItems
+            }
         }
     }
 
     private var gridContent: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
-                ForEach(viewModel.filteredEntries) { entry in
+                ForEach(sortedEntries) { entry in
                     VStack(spacing: 6) {
                         RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
                             .frame(width: 100, height: 100)
@@ -223,7 +298,13 @@ struct FileBrowserView: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                     }
+                    .padding(6)
+                    .background(selection.contains(entry.id) ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .contentShape(Rectangle())
+                    .onTapGesture(count: 1) {
+                        selection = [entry.id]
+                    }
                     .onTapGesture(count: 2) {
                         Task { await viewModel.navigate(to: entry) }
                     }
@@ -232,11 +313,36 @@ struct FileBrowserView: View {
                 }
             }
             .padding()
+            .contextMenu {
+                backgroundContextMenuItems
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var backgroundContextMenuItems: some View {
+        Button("Upload Here…") {
+            uploadFilePicker()
+        }
+        Button("New Folder…") {
+            newFolderName = ""
+            isCreatingFolder = true
         }
     }
 
     @ViewBuilder
     private func contextMenuItems(for entry: RemoteFile) -> some View {
+        Button("Open") {
+            if entry.isDirectory {
+                Task { await viewModel.navigate(to: entry) }
+            } else {
+                Task {
+                    if let url = await viewModel.preview(entry) {
+                        previewURL = url
+                    }
+                }
+            }
+        }
         if !entry.isDirectory {
             Button("Quick Look") {
                 Task {
@@ -253,14 +359,56 @@ struct FileBrowserView: View {
                     viewModel.download(entry, to: destination)
                 }
             }
+        } else {
+            Button("Upload Here…") {
+                uploadFilePicker(into: entry.path)
+            }
         }
+        Divider()
         Button("Rename…") {
             renameText = entry.name
             fileToRename = entry
         }
+        Button("Copy Path") {
+            copyPathToPasteboard(entry.path)
+        }
+        Divider()
         Button("Delete", role: .destructive) {
             fileToDelete = entry
         }
+        Divider()
+        Button("Get Info") {
+            fileForProperties = entry
+        }
+    }
+}
+
+private struct SortHeaderButton: View {
+    let title: String
+    let field: FileSortField
+    @Binding var sortField: FileSortField
+    @Binding var sortAscending: Bool
+
+    var body: some View {
+        Button {
+            if sortField == field {
+                sortAscending.toggle()
+            } else {
+                sortField = field
+                sortAscending = true
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                if sortField == field {
+                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.caption.bold())
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -285,28 +433,68 @@ private struct FileRow: View {
     let transferService: TransferServiceProtocol
 
     var body: some View {
-        HStack {
-            RemoteThumbnailView(file: entry, serial: serial, transferService: transferService)
-                .frame(width: 20, height: 20)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                RemoteThumbnailView(file: entry, serial: serial, transferService: transferService)
+                    .frame(width: 20, height: 20)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
                 Text(entry.name)
-                if let modifiedAt = entry.modifiedAt {
-                    Text(modifiedAt, style: .date)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(entry.modifiedAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "--")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: FileBrowserView.dateColumnWidth, alignment: .leading)
+
+            Text(entry.isDirectory ? "--" : entry.formattedSize)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: FileBrowserView.sizeColumnWidth, alignment: .trailing)
+        }
+    }
+}
+
+private struct FilePropertiesView: View {
+    let file: RemoteFile
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: file.isDirectory ? "folder.fill" : "doc.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text(file.name)
+                    .font(.title3.bold())
+                    .lineLimit(2)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                LabeledContent("Kind", value: file.isDirectory ? "Folder" : "File")
+                LabeledContent("Path", value: file.path)
+                if !file.isDirectory {
+                    LabeledContent("Size", value: file.formattedSize)
+                }
+                if let modifiedAt = file.modifiedAt {
+                    LabeledContent("Modified", value: modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                }
+                LabeledContent("Permissions", value: file.permissions)
+                if file.isSymlink, let target = file.symlinkTarget {
+                    LabeledContent("Symlink Target", value: target)
                 }
             }
-
+            .font(.callout)
             Spacer()
-
-            if !entry.isDirectory, entry.modifiedAt != nil {
-                Text(entry.formattedSize)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
+        .padding()
+        .frame(width: 380)
     }
 }
 
