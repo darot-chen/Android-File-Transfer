@@ -31,6 +31,7 @@ final class ADBTrackDevicesStreamer: ADBDeviceStreaming, Sendable {
                 continuation.finish(throwing: ADBProcessError.launchFailed(error.localizedDescription))
                 return
             }
+            ChildProcessRegistry.shared.register(process)
 
             // Reads on a dedicated GCD thread rather than FileHandle.bytes: this
             // stream runs indefinitely (adb never closes it on its own), and a
@@ -42,6 +43,7 @@ final class ADBTrackDevicesStreamer: ADBDeviceStreaming, Sendable {
                 while true {
                     let chunk = handle.availableData
                     if chunk.isEmpty {
+                        ChildProcessRegistry.shared.unregister(process)
                         continuation.finish()
                         return
                     }

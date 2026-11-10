@@ -102,6 +102,7 @@ final class TransferService: TransferServiceProtocol, Sendable {
                 continuation.finish(throwing: ADBProcessError.launchFailed(error.localizedDescription))
                 return
             }
+            ChildProcessRegistry.shared.register(process)
 
             let pollTask = Task {
                 while !Task.isCancelled {
@@ -125,6 +126,7 @@ final class TransferService: TransferServiceProtocol, Sendable {
                 while !stdoutHandle.availableData.isEmpty {}
 
                 process.waitUntilExit()
+                ChildProcessRegistry.shared.unregister(process)
                 let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 pollTask.cancel()
 

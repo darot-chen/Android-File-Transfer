@@ -35,6 +35,9 @@ actor ADBProcessRunner: ADBProcessRunning {
             throw ADBProcessError.launchFailed(error.localizedDescription)
         }
 
+        ChildProcessRegistry.shared.register(process)
+        defer { ChildProcessRegistry.shared.unregister(process) }
+
         let box = ProcessBox(process)
 
         return try await withTaskCancellationHandler {
