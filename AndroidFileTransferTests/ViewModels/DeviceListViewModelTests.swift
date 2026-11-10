@@ -55,4 +55,18 @@ struct DeviceListViewModelTests {
 
         #expect(viewModel.devices.count == 1)
     }
+
+    @Test
+    func readySerialsExcludesUnauthorizedAndOfflineDevices() async throws {
+        let streaming = MockADBDeviceStreaming(snapshots: [
+            "READY\tdevice model:Pixel\nLOCKED\tunauthorized\nOFF\toffline",
+        ])
+        let viewModel = DeviceListViewModel(deviceService: DeviceService(streaming: streaming), detailsService: MockDeviceDetailsService())
+
+        viewModel.startObserving()
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.devices.count == 3)
+        #expect(viewModel.readySerials == ["READY"])
+    }
 }

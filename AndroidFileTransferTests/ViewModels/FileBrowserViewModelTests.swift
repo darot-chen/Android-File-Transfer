@@ -23,7 +23,6 @@ struct FileBrowserViewModelTests {
         transferService: TransferServiceProtocol = MockTransferService(),
         transferQueue: TransferQueueViewModel? = nil,
         favorites: FavoritesViewModel? = nil,
-        recentFolders: RecentFoldersViewModel? = nil,
         serial: String = "SERIAL",
         initialPath: String = "/sdcard"
     ) -> FileBrowserViewModel {
@@ -36,7 +35,6 @@ struct FileBrowserViewModelTests {
                 historyStore: MockTransferHistoryStore()
             ),
             favorites: favorites ?? FavoritesViewModel(store: MockFavoritesStore()),
-            recentFolders: recentFolders ?? RecentFoldersViewModel(store: MockRecentFoldersStore()),
             settings: SettingsViewModel(defaults: ephemeralDefaults),
             logStore: LogStore(),
             serial: serial,
@@ -68,17 +66,6 @@ struct FileBrowserViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.entries.map(\.name) == ["Pictures", "notes.txt"])
-    }
-
-    @Test
-    func loadRecordsAVisitToRecentFolders() async {
-        let recentFolders = RecentFoldersViewModel(store: MockRecentFoldersStore())
-        let viewModel = makeViewModel(recentFolders: recentFolders, initialPath: "/sdcard/DCIM")
-
-        await viewModel.load()
-
-        #expect(recentFolders.recentFolders.map(\.path) == ["/sdcard/DCIM"])
-        #expect(recentFolders.recentFolders[0].serial == "SERIAL")
     }
 
     @Test

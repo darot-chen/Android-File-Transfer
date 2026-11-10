@@ -48,4 +48,15 @@ struct FavoritesViewModelTests {
         #expect(viewModel.isFavorite(serial: "DEVICE_A", path: "/sdcard/DCIM"))
         #expect(!viewModel.isFavorite(serial: "DEVICE_B", path: "/sdcard/DCIM"))
     }
+
+    @Test
+    func favoritesOnConnectedSerialsHidesOtherDevices() {
+        let mine = Favorite(id: UUID(), serial: "A", path: "/sdcard/DCIM", name: "DCIM")
+        let other = Favorite(id: UUID(), serial: "B", path: "/sdcard/Music", name: "Music")
+        let viewModel = FavoritesViewModel(store: MockFavoritesStore(initial: [mine, other]))
+
+        #expect(viewModel.favorites(on: ["A"]) == [mine])
+        #expect(viewModel.favorites(on: []).isEmpty)
+        #expect(viewModel.favorites.count == 2)
+    }
 }

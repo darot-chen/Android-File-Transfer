@@ -26,7 +26,6 @@ final class FileBrowserViewModel {
     let transferService: TransferServiceProtocol
     let transferQueue: TransferQueueViewModel
     private let favorites: FavoritesViewModel
-    private let recentFolders: RecentFoldersViewModel
     private let settings: SettingsViewModel
     private let logStore: LogStore
     let serial: String
@@ -36,7 +35,6 @@ final class FileBrowserViewModel {
         transferService: TransferServiceProtocol,
         transferQueue: TransferQueueViewModel,
         favorites: FavoritesViewModel,
-        recentFolders: RecentFoldersViewModel,
         settings: SettingsViewModel,
         logStore: LogStore,
         serial: String,
@@ -46,7 +44,6 @@ final class FileBrowserViewModel {
         self.transferService = transferService
         self.transferQueue = transferQueue
         self.favorites = favorites
-        self.recentFolders = recentFolders
         self.settings = settings
         self.logStore = logStore
         self.serial = serial
@@ -84,8 +81,6 @@ final class FileBrowserViewModel {
                     if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
                     return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
                 }
-            let name = (currentPath as NSString).lastPathComponent
-            recentFolders.recordVisit(serial: serial, path: currentPath, name: name.isEmpty ? "/" : name)
         } catch {
             errorMessage = String(describing: error)
             logStore.log(.error, category: "FileBrowser", "Failed to list \(currentPath): \(error)")
