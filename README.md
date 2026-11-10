@@ -12,6 +12,10 @@
   <a href="https://github.com/darot-chen/Android-File-Transfer/releases/latest">Download the latest release</a>
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/browser.png" alt="Browsing a phone's storage in list view, with the device, its free space and the photo library in the sidebar">
+</p>
+
 ---
 
 It talks to your phone over USB using Google's `adb` (Android Debug Bridge), which comes bundled inside the app. You don't need to install Android Studio or any other tools.
