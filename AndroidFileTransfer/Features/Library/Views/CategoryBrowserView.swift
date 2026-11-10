@@ -14,7 +14,6 @@ struct CategoryBrowserView: View {
     @State private var previewTask: Task<URL?, Never>?
     @State private var isLoadingPreview = false
     @State private var selection: Set<String> = []
-    @State private var lastSelectedID: String?
     @State private var sortField: FileSortField = .dateModified
     @State private var sortAscending = false
     @FocusState private var isContentFocused: Bool
@@ -122,9 +121,8 @@ struct CategoryBrowserView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
                     ForEach(sortedFiles) { file in
                         VStack(spacing: 6) {
-                            RemoteThumbnailView(file: file, serial: serial, transferService: transferService)
+                            RemoteThumbnailView(file: file, serial: serial, transferService: transferService, style: .tile)
                                 .frame(width: 100, height: 100)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             Text(file.displayNameWithoutExtension)
                                 .font(.caption)
                                 .lineLimit(2)
@@ -156,26 +154,10 @@ struct CategoryBrowserView: View {
         }
     }
 
-    /// Mirrors Finder's click/⌘-click/⇧-click semantics. Only the grid needs
-    /// this by hand — List(selection:) already gets it natively from AppKit.
+    /// Only the grid needs this by hand — List(selection:) already gets
+    /// Finder's list-view click semantics natively from AppKit.
     private func handleGridSelectionTap(_ file: RemoteFile) {
-        let modifiers = NSEvent.modifierFlags
-        if modifiers.contains(.command) {
-            if selection.contains(file.id) {
-                selection.remove(file.id)
-            } else {
-                selection.insert(file.id)
-            }
-        } else if modifiers.contains(.shift),
-                  let lastSelectedID,
-                  let lastIndex = sortedFiles.firstIndex(where: { $0.id == lastSelectedID }),
-                  let currentIndex = sortedFiles.firstIndex(where: { $0.id == file.id }) {
-            let range = lastIndex < currentIndex ? lastIndex...currentIndex : currentIndex...lastIndex
-            for index in range { selection.insert(sortedFiles[index].id) }
-        } else {
-            selection = [file.id]
-        }
-        lastSelectedID = file.id
+        selection = GridSelection.applyingClick(on: file.id, modifiers: NSEvent.modifierFlags, to: selection)
     }
 
     /// Drags the whole current selection if `file` is part of a
