@@ -39,34 +39,39 @@ struct ContentView: View {
         }
     }
 
+    private var availability: DeviceAvailability {
+        DeviceAvailability.resolve(devices: deviceListViewModel.devices, selectedSerial: selectedDeviceID)
+    }
+
+    /// The selected device's serial, only while adb can actually talk to it.
+    /// Browsing and library scanning are keyed on this so nothing runs (and
+    /// fails with "device not found") against a disconnected device.
+    private var activeSerial: String? {
+        availability.readyDevice?.serial
+    }
+
     private var mainSplitView: some View {
         NavigationSplitView {
             DeviceListView(
                 viewModel: deviceListViewModel,
                 favorites: environment.favorites,
-                recentFolders: environment.recentFolders,
                 onSelectFavorite: { favorite in
                     selectedDeviceID = favorite.serial
                     pendingInitialPath = favorite.path
-                    selectedDestination = .files
-                },
-                onSelectRecentFolder: { recentFolder in
-                    selectedDeviceID = recentFolder.serial
-                    pendingInitialPath = recentFolder.path
                     selectedDestination = .files
                 },
                 selection: $selectedDeviceID
             )
             .navigationTitle("Devices")
         } content: {
-            if let libraryViewModel {
+            if let libraryViewModel, activeSerial != nil {
                 LibraryCategoriesView(libraryViewModel: libraryViewModel, selection: $selectedDestination)
             } else {
-                Text("Select a device")
-                    .foregroundStyle(.secondary)
+                Color.clear
+                    .navigationTitle("Browse")
             }
         } detail: {
-            if let selectedDeviceID {
+            if let activeSerial {
                 switch selectedDestination {
                 case .category(let category):
                     if let libraryViewModel {
@@ -76,21 +81,20 @@ struct ContentView: View {
                             transferQueue: environment.transferQueue,
                             transferService: environment.transferService,
                             logStore: environment.logStore,
-                            serial: selectedDeviceID
+                            serial: activeSerial
                         )
-                        .id("\(selectedDeviceID)|\(category.rawValue)")
+                        .id("\(activeSerial)|\(category.rawValue)")
                     }
                 case .files, .none:
                     FileBrowserContainerView(
                         environment: environment,
-                        serial: selectedDeviceID,
+                        serial: activeSerial,
                         initialPath: pendingInitialPath ?? "/sdcard"
                     )
-                    .id("\(selectedDeviceID)|\(pendingInitialPath ?? "")")
+                    .id("\(activeSerial)|\(pendingInitialPath ?? "")")
                 }
             } else {
-                Text("Select a device")
-                    .foregroundStyle(.secondary)
+                DeviceUnavailableView(availability: availability)
                     .frame(minWidth: 480, minHeight: 320)
             }
         }
@@ -129,12 +133,19 @@ struct ContentView: View {
             SettingsView(viewModel: environment.settings)
         }
         .preferredColorScheme(environment.settings.appearance.colorScheme)
-        .onChange(of: selectedDeviceID) { _, newSerial in
+        .onChange(of: deviceListViewModel.devices, initial: true) { _, devices in
+            let reconciled = DeviceAvailability.reconciledSelection(current: selectedDeviceID, devices: devices)
+            if reconciled != selectedDeviceID {
+                selectedDeviceID = reconciled
+            }
+        }
+        .onChange(of: activeSerial) { _, newSerial in
             selectedDestination = .files
             if let newSerial {
                 libraryViewModel = LibraryViewModel(fileSystemService: environment.fileSystemService, serial: newSerial)
             } else {
                 libraryViewModel = nil
+                pendingInitialPath = nil
             }
         }
         .task {
@@ -152,7 +163,6 @@ private struct FileBrowserContainerView: View {
             transferService: environment.transferService,
             transferQueue: environment.transferQueue,
             favorites: environment.favorites,
-            recentFolders: environment.recentFolders,
             settings: environment.settings,
             logStore: environment.logStore,
             serial: serial,

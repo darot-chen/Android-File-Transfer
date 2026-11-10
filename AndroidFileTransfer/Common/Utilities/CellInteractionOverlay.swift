@@ -13,7 +13,7 @@ import SwiftUI
 /// deciding what a click/drag means, instead of two competing ones:
 ///
 /// - Plain click on an unselected item: select just that item.
-/// - ⌘/⇧-click: toggle/range-select (delegated back to the caller).
+/// - ⌘/⇧-click: toggle that item (delegated back to the caller).
 /// - Plain click on an item that's already part of a multi-selection:
 ///   selection is preserved (in case this turns into a drag of the whole
 ///   selection) and only collapses to just this item on mouse-up if no

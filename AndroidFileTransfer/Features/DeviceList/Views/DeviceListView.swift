@@ -3,36 +3,36 @@ import SwiftUI
 struct DeviceListView: View {
     let viewModel: DeviceListViewModel
     let favorites: FavoritesViewModel
-    let recentFolders: RecentFoldersViewModel
     let onSelectFavorite: (Favorite) -> Void
-    let onSelectRecentFolder: (RecentFolder) -> Void
     @Binding var selection: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            if let selection, let device = viewModel.devices.first(where: { $0.id == selection }) {
+            if let selection,
+               let device = viewModel.devices.first(where: { $0.id == selection && $0.state == .device }) {
                 DeviceInfoHeader(device: device, details: viewModel.detailsBySerial[selection])
                 Divider()
             }
 
-            List(selection: $selection) {
-                FavoritesView(viewModel: favorites, onSelect: onSelectFavorite)
-                RecentFoldersView(viewModel: recentFolders, onSelect: onSelectRecentFolder)
-
-                Section("Devices") {
-                    ForEach(viewModel.devices) { device in
-                        DeviceRow(device: device)
-                            .tag(device.id)
-                    }
+            if viewModel.devices.isEmpty {
+                // Replaces the list outright (rather than overlaying it) so
+                // the empty state never draws on top of sidebar rows.
+                ContentUnavailableView {
+                    Label("No Devices", systemImage: "cable.connector")
+                } description: {
+                    Text("Connect an Android phone via USB.")
                 }
-            }
-            .overlay {
-                if viewModel.devices.isEmpty {
-                    ContentUnavailableView(
-                        "No Devices",
-                        systemImage: "cable.connector",
-                        description: Text("Connect an Android device via USB and enable USB debugging.")
-                    )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $selection) {
+                    Section("Devices") {
+                        ForEach(viewModel.devices) { device in
+                            DeviceRow(device: device)
+                                .tag(device.id)
+                        }
+                    }
+
+                    FavoritesView(viewModel: favorites, connectedSerials: viewModel.readySerials, onSelect: onSelectFavorite)
                 }
             }
         }
@@ -42,11 +42,19 @@ struct DeviceListView: View {
         .onDisappear {
             viewModel.stopObserving()
         }
-        .onChange(of: selection) { _, newSerial in
-            if let newSerial {
-                Task { await viewModel.refreshDetails(for: newSerial) }
+        // Keyed on "selected and ready" rather than just the selection, so a
+        // device that goes unauthorized → authorized while selected still
+        // gets its details fetched once adb can actually talk to it.
+        .task(id: readySelection) {
+            if let readySelection {
+                await viewModel.refreshDetails(for: readySelection)
             }
         }
+    }
+
+    private var readySelection: String? {
+        guard let selection, viewModel.readySerials.contains(selection) else { return nil }
+        return selection
     }
 }
 
@@ -58,7 +66,7 @@ private struct DeviceInfoHeader: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: "iphone")
-                Text(device.model ?? device.serial)
+                Text(device.displayName)
                     .font(.headline)
             }
             if let version = details?.androidVersion {
@@ -98,7 +106,7 @@ private struct DeviceRow: View {
                 .fill(color)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading) {
-                Text(device.model ?? device.serial)
+                Text(device.displayName)
                 if !statusText.isEmpty {
                     Text(statusText)
                         .font(.caption)

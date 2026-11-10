@@ -18,7 +18,6 @@ struct FileBrowserView: View {
     @State private var fileForProperties: RemoteFile?
     @State private var sortField: FileSortField = .dateModified
     @State private var sortAscending = false
-    @State private var lastSelectedID: String?
     @FocusState private var isContentFocused: Bool
 
     static let dateColumnWidth: CGFloat = 140
@@ -33,6 +32,7 @@ struct FileBrowserView: View {
             toolbar
             Divider()
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         // .onKeyPress only receives events when something in this view is
         // actually focused. Clicking a row's selection binding doesn't
@@ -187,7 +187,9 @@ struct FileBrowserView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(crumb.path == viewModel.currentPath ? .primary : .secondary)
 
-                        if crumb.id != viewModel.breadcrumbs.last?.id {
+                        // The root crumb is itself labeled "/", so a separator
+                        // after it would render as "/ / sdcard".
+                        if crumb.path != "/", crumb.id != viewModel.breadcrumbs.last?.id {
                             Text("/").foregroundStyle(.secondary)
                         }
                     }
@@ -316,9 +318,8 @@ struct FileBrowserView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 16) {
                     ForEach(sortedEntries) { entry in
                         VStack(spacing: 6) {
-                            RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService)
+                            RemoteThumbnailView(file: entry, serial: viewModel.serial, transferService: viewModel.transferService, style: .tile)
                                 .frame(width: 100, height: 100)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             Text(entry.displayNameWithoutExtension)
                                 .font(.caption)
                                 .lineLimit(2)
@@ -355,26 +356,10 @@ struct FileBrowserView: View {
         }
     }
 
-    /// Mirrors Finder's click/⌘-click/⇧-click semantics. Only the grid needs
-    /// this by hand — List(selection:) already gets it natively from AppKit.
+    /// Only the grid needs this by hand — List(selection:) already gets
+    /// Finder's list-view click semantics natively from AppKit.
     private func handleGridSelectionTap(_ entry: RemoteFile) {
-        let modifiers = NSEvent.modifierFlags
-        if modifiers.contains(.command) {
-            if selection.contains(entry.id) {
-                selection.remove(entry.id)
-            } else {
-                selection.insert(entry.id)
-            }
-        } else if modifiers.contains(.shift),
-                  let lastSelectedID,
-                  let lastIndex = sortedEntries.firstIndex(where: { $0.id == lastSelectedID }),
-                  let currentIndex = sortedEntries.firstIndex(where: { $0.id == entry.id }) {
-            let range = lastIndex < currentIndex ? lastIndex...currentIndex : currentIndex...lastIndex
-            for index in range { selection.insert(sortedEntries[index].id) }
-        } else {
-            selection = [entry.id]
-        }
-        lastSelectedID = entry.id
+        selection = GridSelection.applyingClick(on: entry.id, modifiers: NSEvent.modifierFlags, to: selection)
     }
 
     /// Drags the whole current selection if `entry` is part of a

@@ -24,9 +24,18 @@ import SwiftUI
 /// larger than `maxFullPullSize` just show the icon rather than pulling
 /// hundreds of MB–1GB+ for a thumbnail.
 struct RemoteThumbnailView: View {
+    enum Style {
+        /// Fills and crops to the frame — for small row icons.
+        case icon
+        /// Fits inside the frame at the media's real aspect ratio, so
+        /// portrait vs landscape is visible at a glance — for grid tiles.
+        case tile
+    }
+
     let file: RemoteFile
     let serial: String
     let transferService: TransferServiceProtocol
+    var style: Style = .icon
 
     /// Beyond this, pulling the whole file just to thumbnail it isn't worth
     /// the wait — a real device video can run past 1GB. Raised from an
@@ -40,18 +49,66 @@ struct RemoteThumbnailView: View {
 
     var body: some View {
         Group {
-            if let thumbnailImage {
-                Image(nsImage: thumbnailImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Image(systemName: iconName)
-                    .foregroundStyle(file.isDirectory ? .blue : .secondary)
+            switch style {
+            case .icon: iconContent
+            case .tile: tileContent
             }
         }
         .task(id: file.path) {
             await loadIfNeeded()
         }
+    }
+
+    @ViewBuilder
+    private var iconContent: some View {
+        if let thumbnailImage {
+            Image(nsImage: thumbnailImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else {
+            placeholderIcon
+        }
+    }
+
+    @ViewBuilder
+    private var tileContent: some View {
+        if let thumbnailImage {
+            let shape = RoundedRectangle(cornerRadius: 6)
+            let orientation = MediaOrientation(size: thumbnailImage.size)
+            Image(nsImage: thumbnailImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(shape)
+                // Keeps the edge visible for very dark media (e.g. dark-mode
+                // screenshots) so the shape still reads against the background.
+                .overlay(shape.strokeBorder(.separator, lineWidth: 1))
+                .overlay(alignment: .bottomLeading) {
+                    if isVideo {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .padding(5)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .help(orientation.map { "\($0.displayName) \(isVideo ? "video" : "image")" } ?? "")
+                .accessibilityLabel(orientation.map { "\($0.displayName) \(isVideo ? "video" : "image")" } ?? file.name)
+        } else {
+            placeholderIcon
+                .font(.system(size: 36))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var placeholderIcon: some View {
+        Image(systemName: iconName)
+            .foregroundStyle(file.isDirectory ? .blue : .secondary)
+    }
+
+    private var isVideo: Bool {
+        FileCategory.category(forFileName: file.name) == .videos
     }
 
     private var iconName: String {
@@ -88,11 +145,19 @@ struct RemoteThumbnailView: View {
     }
 
     private func loadImageThumbnail(cacheURL: URL) async {
+        // Pulls to a temp file and only moves it into the cache once the pull
+        // fully succeeds. Pulling straight into the cache left a truncated file
+        // behind whenever a cell scrolled away mid-pull, and that partial file
+        // was then treated as a finished thumbnail (a mostly gray image).
+        let partialURL = cacheURL.appendingPathExtension("partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: partialURL) }
         do {
-            for try await _ in transferService.pull(remotePath: file.path, localURL: cacheURL, on: serial) {
+            for try await _ in transferService.pull(remotePath: file.path, localURL: partialURL, on: serial) {
                 if Task.isCancelled { return }
             }
             if Task.isCancelled { return }
+            try? FileManager.default.removeItem(at: cacheURL)
+            try FileManager.default.moveItem(at: partialURL, to: cacheURL)
             thumbnailImage = Self.downsampled(cacheURL)
         } catch {
             loadFailed = true
@@ -118,7 +183,7 @@ struct RemoteThumbnailView: View {
                 loadFailed = true
                 return
             }
-            try? frameData.write(to: cacheURL)
+            try? frameData.write(to: cacheURL, options: .atomic)
             if Task.isCancelled { return }
             thumbnailImage = Self.downsampled(cacheURL)
         } catch {

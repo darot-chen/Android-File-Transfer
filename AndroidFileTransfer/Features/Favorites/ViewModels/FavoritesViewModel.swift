@@ -12,6 +12,11 @@ final class FavoritesViewModel {
         self.favorites = store.load()
     }
 
+    /// Favorites are saved per device; only those on a connected device can be opened.
+    func favorites(on serials: Set<String>) -> [Favorite] {
+        favorites.filter { serials.contains($0.serial) }
+    }
+
     func isFavorite(serial: String, path: String) -> Bool {
         favorites.contains { $0.serial == serial && $0.path == path }
     }

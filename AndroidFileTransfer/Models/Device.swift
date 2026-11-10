@@ -13,6 +13,11 @@ struct Device: Identifiable, Sendable, Equatable {
     let serial: String
     let state: State
     let model: String?
+
+    /// adb reports models with underscores in place of spaces (e.g. "Pixel_9_Pro").
+    var displayName: String {
+        model.map { $0.replacingOccurrences(of: "_", with: " ") } ?? serial
+    }
 }
 
 extension Device {

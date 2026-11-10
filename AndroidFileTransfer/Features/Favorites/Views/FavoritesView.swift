@@ -2,12 +2,14 @@ import SwiftUI
 
 struct FavoritesView: View {
     let viewModel: FavoritesViewModel
+    let connectedSerials: Set<String>
     let onSelect: (Favorite) -> Void
 
     var body: some View {
-        if !viewModel.favorites.isEmpty {
+        let visible = viewModel.favorites(on: connectedSerials)
+        if !visible.isEmpty {
             Section("Favorites") {
-                ForEach(viewModel.favorites) { favorite in
+                ForEach(visible) { favorite in
                     Button {
                         onSelect(favorite)
                     } label: {

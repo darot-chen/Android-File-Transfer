@@ -11,7 +11,6 @@ final class AppEnvironment {
     let transferService: TransferServiceProtocol
     let transferQueue: TransferQueueViewModel
     let favorites: FavoritesViewModel
-    let recentFolders: RecentFoldersViewModel
     let settings: SettingsViewModel
     let logStore: LogStore
 
@@ -23,7 +22,6 @@ final class AppEnvironment {
         transferService: TransferServiceProtocol = TransferService(),
         historyStore: TransferHistoryStoring = TransferHistoryStore(),
         favoritesStore: FavoritesStoring = FavoritesStore(),
-        recentFoldersStore: RecentFoldersStoring = RecentFoldersStore(),
         settingsDefaults: UserDefaults = .standard
     ) {
         self.adbService = adbService
@@ -32,7 +30,6 @@ final class AppEnvironment {
         self.fileSystemService = fileSystemService
         self.transferService = transferService
         self.favorites = FavoritesViewModel(store: favoritesStore)
-        self.recentFolders = RecentFoldersViewModel(store: recentFoldersStore)
         self.logStore = LogStore()
 
         let settings = SettingsViewModel(defaults: settingsDefaults)

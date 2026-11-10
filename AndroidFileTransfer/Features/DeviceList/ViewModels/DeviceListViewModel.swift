@@ -16,6 +16,11 @@ final class DeviceListViewModel {
         self.detailsService = detailsService
     }
 
+    /// Serials of devices adb can actually talk to right now.
+    var readySerials: Set<String> {
+        Set(devices.filter { $0.state == .device }.map(\.serial))
+    }
+
     func refreshDetails(for serial: String) async {
         detailsBySerial[serial] = await detailsService.fetchDetails(serial: serial)
     }
