@@ -18,7 +18,7 @@ import SwiftUI
 /// didn't probe incrementally the way real HTTP range streaming would, it
 /// just requested the entire file in one shot regardless, which is no better
 /// than pulling it directly. So thumbnailing a video really does mean
-/// pulling the whole file — kept in check two ways: `VideoThumbnailPullLimiter`
+/// pulling the whole file — kept in check two ways: `PullLimiter.videos`
 /// stops several huge pulls from fighting over the same USB connection at
 /// once (which was making each one slower than sequential), and videos
 /// larger than `maxFullPullSize` just show the icon rather than pulling
@@ -133,15 +133,30 @@ struct RemoteThumbnailView: View {
 
         let cacheURL = ThumbnailCache.localURL(for: file.path)
         if FileManager.default.fileExists(atPath: cacheURL.path) {
-            thumbnailImage = Self.downsampled(cacheURL)
+            await showThumbnail(from: cacheURL)
             return
         }
+
+        let limiter = category == .images ? PullLimiter.images : PullLimiter.videos
+        guard await limiter.acquire() else { return }
+        defer { Task { await limiter.release() } }
+        if Task.isCancelled { return }
 
         if category == .images {
             await loadImageThumbnail(cacheURL: cacheURL)
         } else {
             await loadVideoThumbnail(cacheURL: cacheURL)
         }
+    }
+
+    /// Decodes off the main thread: shrinking a multi-MB camera photo takes
+    /// long enough that doing it for every visible cell made scrolling stutter.
+    private func showThumbnail(from url: URL) async {
+        let cgImage = await Task.detached(priority: .userInitiated) {
+            Self.downsampled(url)
+        }.value
+        guard !Task.isCancelled, let cgImage else { return }
+        thumbnailImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     private func loadImageThumbnail(cacheURL: URL) async {
@@ -158,17 +173,13 @@ struct RemoteThumbnailView: View {
             if Task.isCancelled { return }
             try? FileManager.default.removeItem(at: cacheURL)
             try FileManager.default.moveItem(at: partialURL, to: cacheURL)
-            thumbnailImage = Self.downsampled(cacheURL)
+            await showThumbnail(from: cacheURL)
         } catch {
-            loadFailed = true
+            if !Task.isCancelled { loadFailed = true }
         }
     }
 
     private func loadVideoThumbnail(cacheURL: URL) async {
-        await VideoThumbnailPullLimiter.shared.acquire()
-        defer { Task { await VideoThumbnailPullLimiter.shared.release() } }
-        if Task.isCancelled { return }
-
         let tempVideoURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AndroidFileTransferVideoThumb-\(UUID().uuidString)")
             .appendingPathExtension((file.name as NSString).pathExtension)
@@ -185,9 +196,9 @@ struct RemoteThumbnailView: View {
             }
             try? frameData.write(to: cacheURL, options: .atomic)
             if Task.isCancelled { return }
-            thumbnailImage = Self.downsampled(cacheURL)
+            await showThumbnail(from: cacheURL)
         } catch {
-            loadFailed = true
+            if !Task.isCancelled { loadFailed = true }
         }
     }
 
@@ -204,14 +215,13 @@ struct RemoteThumbnailView: View {
         return bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
     }
 
-    private static func downsampled(_ url: URL, maxPixelSize: CGFloat = 240) -> NSImage? {
+    nonisolated private static func downsampled(_ url: URL, maxPixelSize: CGFloat = 240) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             kCGImageSourceCreateThumbnailWithTransform: true,
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
