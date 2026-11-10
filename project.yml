@@ -14,8 +14,8 @@ settings:
     CODE_SIGNING_REQUIRED: YES
     CODE_SIGNING_ALLOWED: YES
     ENABLE_HARDENED_RUNTIME: NO
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "2"
 
 targets:
   AndroidFileTransfer:
@@ -31,6 +31,8 @@ targets:
       path: AndroidFileTransfer/Info.plist
       properties:
         CFBundleDisplayName: Android File Transfer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: Personal use only.
         NSPrincipalClass: NSApplication
